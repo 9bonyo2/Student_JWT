@@ -41,9 +41,11 @@ return jdbcTemplate.queryForList(sql, "%" + name + "%");
 
 | 용도 | 메서드 | URL |
 |---|---|---|
-| 🔴 취약 검색 | GET | `/api/vuln/sqli/students?name=Alice` |
-| 🟢 안전 검색 | GET | `/api/vuln/sqli/students-safe?name=Alice` |
+| 🔴 취약 검색 (JdbcTemplate) | GET | `/api/vuln/sqli/students?name=Alice` |
+| 🟢 안전 검색 (JdbcTemplate) | GET | `/api/vuln/sqli/students-safe?name=Alice` |
 | 실행 SQL 확인 | GET | `/api/vuln/sqli/students/debug?name=...` |
+| 🔴 취약 검색 (JPA 네이티브) | GET | `/api/vuln/sqli/students-jpa?name=Alice` |
+| 🟢 안전 검색 (JPA 네이티브) | GET | `/api/vuln/sqli/students-jpa-safe?name=Alice` |
 
 > 실습 편의를 위해 `/api/vuln/**` 는 인증 없이 접근할 수 있도록 열려 있다(`SecurityConfig`).
 
@@ -115,6 +117,40 @@ curl "http://localhost:8080/api/vuln/sqli/students?name=%25%27%20UNION%20SELECT%
 → 따옴표·UNION 이 **검색 문자열**로만 취급되어 인젝션이 성립하지 않는다(결과 없음 또는 정상 검색).
 
 ---
+
+## 4-7. 🔑 "JPA라서 안전한 게 아니다" — 도구가 아니라 코딩 방식의 문제
+
+가장 흔한 오해 : *"우리는 JPA를 쓰니까 SQL 인젝션은 걱정 없다."*
+
+취약/안전을 가르는 것은 **도구(JPA vs JdbcTemplate)** 가 아니라 **문자열 결합 vs 파라미터 바인딩** 이다.
+
+| 도구 | 문자열 결합 | 파라미터 바인딩 |
+|---|---|---|
+| JdbcTemplate | 🔴 취약 (`students`) | 🟢 안전 (`students-safe`) |
+| **JPA 네이티브** | 🔴 **취약** (`students-jpa`) | 🟢 안전 (`students-jpa-safe`) |
+
+JPA 취약 코드(`JpaSqlInjectionDemoService`):
+```java
+// 🔴 JPA 인데도 문자열을 결합하면 동일하게 뚫린다
+String sql = "SELECT student_id, name, student_number FROM students "
+           + "WHERE name LIKE '%" + name + "%'";
+entityManager.createNativeQuery(sql).getResultList();
+```
+```java
+// 🟢 같은 네이티브 쿼리라도 바인딩하면 안전하다
+String sql = "SELECT student_id, name, student_number FROM students WHERE name LIKE :name";
+entityManager.createNativeQuery(sql).setParameter("name", "%" + name + "%").getResultList();
+```
+
+실습 : JdbcTemplate 취약 엔드포인트에서 성공한 UNION 페이로드를 **`/api/vuln/sqli/students-jpa`** 에 그대로 넣으면 동일하게 `user_info` 계정/해시가 탈취된다.
+
+```bash
+curl "http://localhost:8080/api/vuln/sqli/students-jpa?name=%25%27%20UNION%20SELECT%20id,email,password%20FROM%20user_info%20%23"
+```
+
+> **결론**: `@Query` 명명 파라미터, JPA 메서드 쿼리, `JdbcTemplate ?` 바인딩은 모두 안전하다.
+> 반대로 **입력을 문자열로 조립하는 순간, 어떤 도구를 쓰든 취약**하다.
+> ( 이 프로젝트의 실제 검색 기능 `StudentSearchService` 는 JPQL 바인딩이라 안전하다 )
 
 ## 5. 방어 정리
 

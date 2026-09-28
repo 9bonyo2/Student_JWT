@@ -18,9 +18,14 @@ import java.util.Map;
  * ( 실무에서는 이런 검색 API 도 인증 뒤에 있지만, 인증이 SQL 인젝션을 막아 주지는 않는다 )
  *
  * 비교 실습 :
- *   GET /api/vuln/sqli/students?name=Alice        (🔴 취약 : 문자열 결합)
- *   GET /api/vuln/sqli/students-safe?name=Alice   (🟢 안전 : 파라미터 바인딩)
- *   GET /api/vuln/sqli/students/debug?name=...     (실행되는 SQL 문자열 확인)
+ *   [JdbcTemplate]
+ *   GET /api/vuln/sqli/students?name=Alice         (🔴 취약 : 문자열 결합)
+ *   GET /api/vuln/sqli/students-safe?name=Alice    (🟢 안전 : 파라미터 바인딩)
+ *   GET /api/vuln/sqli/students/debug?name=...      (실행되는 SQL 문자열 확인)
+ *
+ *   [JPA 네이티브 쿼리] - "도구가 아니라 문자열 결합이 문제"임을 증명
+ *   GET /api/vuln/sqli/students-jpa?name=Alice      (🔴 취약 : createNativeQuery + 결합)
+ *   GET /api/vuln/sqli/students-jpa-safe?name=Alice (🟢 안전 : setParameter 바인딩)
  */
 @RestController
 @RequestMapping("/api/vuln/sqli")
@@ -28,6 +33,7 @@ import java.util.Map;
 public class SqlInjectionDemoController {
 
     private final SqlInjectionDemoService sqlInjectionDemoService;
+    private final JpaSqlInjectionDemoService jpaSqlInjectionDemoService;
 
     /** 🔴 취약한 검색 : 같은 입력이라도 UNION/OR 페이로드가 그대로 실행된다 */
     @GetMapping("/students")
@@ -45,5 +51,21 @@ public class SqlInjectionDemoController {
     @GetMapping("/students/debug")
     public Map<String, Object> debug(@RequestParam(defaultValue = "") String name) {
         return sqlInjectionDemoService.debugVulnerableSql(name);
+    }
+
+    //------------------------------------------------------------------
+    // JPA 네이티브 쿼리 버전 : 도구가 JPA 여도 문자열 결합이면 동일하게 취약하다
+    //------------------------------------------------------------------
+
+    /** 🔴 JPA 네이티브 쿼리 + 문자열 결합 : JdbcTemplate 데모와 동일하게 뚫린다 */
+    @GetMapping("/students-jpa")
+    public List<?> searchJpaVulnerable(@RequestParam(defaultValue = "") String name) {
+        return jpaSqlInjectionDemoService.searchVulnerable(name);
+    }
+
+    /** 🟢 JPA 네이티브 쿼리 + 바인딩 : 같은 페이로드도 검색어로만 취급된다 */
+    @GetMapping("/students-jpa-safe")
+    public List<?> searchJpaSafe(@RequestParam(defaultValue = "") String name) {
+        return jpaSqlInjectionDemoService.searchSafe(name);
     }
 }
