@@ -118,7 +118,7 @@ curl "http://localhost:8080/api/vuln/sqli/students?name=%25%27%20UNION%20SELECT%
 
 ---
 
-## 4-7. 🔑 "JPA라서 안전한 게 아니다" — 도구가 아니라 코딩 방식의 문제
+## 4-7. "JPA라서 안전한 게 아니다" — 도구가 아니라 코딩 방식의 문제
 
 가장 흔한 오해 : *"우리는 JPA를 쓰니까 SQL 인젝션은 걱정 없다."*
 
