@@ -62,6 +62,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/userinfos/welcome",
                                 "/api/userinfos/new",
                                 "/api/userinfos/login").permitAll()
+                        //[교육용] SQL 인젝션 등 취약점 실습 엔드포인트는 인증 없이 접근 허용
+                        //( 실무에서는 인증 뒤에 두지만, 인증이 인젝션을 막아 주지는 않는다 )
+                        .requestMatchers("/api/vuln/**").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
