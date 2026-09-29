@@ -173,3 +173,30 @@
 - 감사·구조화 로깅 — Actuator audit events, log4j2 JSON + MDC traceId
 
 > 한 줄 정리: **중요한 것 남기고(민감정보는 빼고) → 한 곳에 모아 → 이상 감지·경보 → 안전하게 보관 → 대응 절차와 연결.**
+
+---
+
+## 보충: #10 오류 메시지 숨김의 두 층
+
+"오류 메시지 숨김"은 한 설정이 아니라 **두 층**으로 이해해야 한다.
+
+**층 1 — Spring Boot 기본 오류 처리기**
+- `@ControllerAdvice`가 잡지 못한 오류(매핑 안 된 500 등)의 기본 응답을 통제. 최신 Spring Boot(2.3+)는 이미 `never`가 기본(명시는 의도 문서화).
+```properties
+server.error.include-stacktrace=never
+server.error.include-message=never
+```
+
+**층 2 — `@RestControllerAdvice` (이 앱의 실제 처리)**
+- 이 앱은 대부분 예외를 `DefaultExceptionAdvice`로 처리 → 위 설정을 **우회**하고 advice 응답이 나간다.
+- ⚠️ **이 앱 이슈**: 500(RuntimeException) 핸들러가 `e.getMessage()`를 그대로 응답 → 내부 오류(SQL·NPE 등) 노출 위험
+```java
+@ExceptionHandler(RuntimeException.class)   // 500
+protected ResponseEntity<ErrorObject> handle(RuntimeException e) {
+    errorObject.setMessage(e.getMessage());  // ← 내부 메시지가 클라이언트로
+    ...
+}
+```
+
+> **원칙**: 외부엔 일반 메시지 + 상관ID(traceId), 내부 로그엔 상세 예외·스택트레이스. 
+> **참고**: 실제 코드 개선(500 일반화, catch-all 핸들러, traceId)은 별도 하드닝 `feature/exception-hardening`(로깅 브랜치 기반)에서 다룬다.
