@@ -1,6 +1,7 @@
 package com.basic.myspringboot.exception.advice;
 
 import com.basic.myspringboot.exception.BusinessException;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
@@ -62,26 +63,42 @@ public class DefaultExceptionAdvice {
 
     //로그인 실패 ( 아이디/비밀번호 불일치 등 ) : 401
     @ExceptionHandler(AuthenticationException.class)
-    protected ResponseEntity<ErrorObject> handleException(AuthenticationException e) {
+    protected ResponseEntity<ErrorObject> handleException(AuthenticationException e, HttpServletRequest request) {
         ErrorObject errorObject = new ErrorObject();
         errorObject.setStatusCode(HttpStatus.UNAUTHORIZED.value());
         errorObject.setMessage(e.getMessage());
 
-        log.warn("인증 실패 : {}", e.getMessage());
+        //[AUDIT] 인증 실패는 감사 대상 : 어떤 요청이 실패했는지 맥락을 함께 남긴다
+        log.warn("[AUDIT] 인증 실패(401) - {} {} from {} : {}",
+                request.getMethod(), request.getRequestURI(), clientIp(request), e.getMessage());
 
         return new ResponseEntity<>(errorObject, HttpStatus.UNAUTHORIZED);
     }
 
     //권한 부족 ( @PreAuthorize 통과 실패 ) : 403
     @ExceptionHandler(AccessDeniedException.class)
-    protected ResponseEntity<ErrorObject> handleException(AccessDeniedException e) {
+    protected ResponseEntity<ErrorObject> handleException(AccessDeniedException e, HttpServletRequest request) {
         ErrorObject errorObject = new ErrorObject();
         errorObject.setStatusCode(HttpStatus.FORBIDDEN.value());
         errorObject.setMessage(e.getMessage());
 
-        log.warn("권한 부족 : {}", e.getMessage());
+        //[AUDIT] 접근 거부(403)는 권한 상승 시도의 신호일 수 있어 반드시 기록한다
+        log.warn("[AUDIT] 접근 거부(403) - {} {} from {} : {}",
+                request.getMethod(), request.getRequestURI(), clientIp(request), e.getMessage());
 
         return new ResponseEntity<>(errorObject, HttpStatus.FORBIDDEN);
+    }
+
+    /**
+     * 클라이언트 IP 추출. 프록시 뒤라면 X-Forwarded-For 의 첫 IP 를 사용한다.
+     * ( 감사 로그에 출처를 남기기 위한 용도 )
+     */
+    private String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 
     @ExceptionHandler(RuntimeException.class)
