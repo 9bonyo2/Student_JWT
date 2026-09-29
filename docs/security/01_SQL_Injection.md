@@ -6,11 +6,23 @@
 
 ---
 
-## 1. 학습 목표
+## 1. 개념 요약과 학습 목표
 
-- 같은 `JdbcTemplate` 코드가 **문자열 결합**이냐 **파라미터 바인딩**이냐에 따라 취약/안전이 갈린다는 것을 이해한다.
-- UNION 기반 인젝션으로 **다른 테이블(`user_info`)의 계정·비밀번호 해시**를 탈취하는 과정을 체험한다.
-- PHP 교재의 페이로드가 Spring/MariaDB 환경에서도 동일하게 동작함을 확인한다.
+**SQL Injection이란?** 사용자 입력을 "데이터(값)"가 아니라 "SQL 구문(명령)"으로 취급할 때, 공격자가 입력에 SQL을 끼워 넣어 DB를 조종하는 공격이다. (웹 요청 → 서버가 입력으로 쿼리 조립 → DB 실행, 이 **조립 단계**가 문제)
+
+**대상 테이블** (실습 앱)
+
+| 테이블 | 주요 컬럼 |
+|---|---|
+| `students` | student_id, name, student_number, department_id, user_info_id |
+| `user_info` (표적) | id, name, email, **password(해시)**, roles |
+
+**UNION 기초**: 두 SELECT 결과를 세로로 합친다. ① 컬럼 수가 같아야 하고 ② 타입이 호환돼야 성립한다. 컬럼명은 첫 SELECT를 따르므로, 다른 테이블 값이 원래 컬럼 자리에 표시된다 → 계정 정보가 "학생 이름" 칸에 섞여 나오는 원리.
+
+**학습 목표**
+- 같은 코드가 **문자열 결합 vs 파라미터 바인딩**으로 취약/안전이 갈림을 이해한다.
+- UNION 인젝션으로 `user_info` 계정·비밀번호 해시를 탈취하는 과정을 체험한다.
+- (상세 개념·SQL/UNION 문법은 Word 교안 `01_SQL_Injection.docx` 1~2장 참고)
 
 ---
 
@@ -154,16 +166,25 @@ curl "http://localhost:8080/api/vuln/sqli/students-jpa?name=%25%27%20UNION%20SEL
 
 ## 5. 방어 정리
 
-| 방법 | 설명 |
-|---|---|
-| **파라미터 바인딩** | `?`(JdbcTemplate) / 명명 파라미터(JPA `@Query`) — 가장 근본적 |
-| **JPA 메서드 쿼리** | `findByNameContaining...` — 자동 바인딩, 문자열 조립 자체가 없음 |
-| 최소 권한 | DB 계정 권한 최소화(다른 테이블/스키마 접근 제한) |
-| 입력 검증 | 화이트리스트 검증(보조 수단, 단독 방어로는 불충분) |
-| 오류 숨김 | 상세 SQL 오류를 응답에 노출하지 않음(오류 기반 인젝션 완화) |
+방어는 한 가지에 의존하지 않고 여러 겹으로 쌓는 **심층 방어(Defense in Depth)** 가 원칙이다. 근본은 파라미터 바인딩이고, 나머지는 이를 보완하거나 피해를 줄인다.
 
-> 기존 `StudentSearchService` + `StudentRepository` 는 이미 JPQL 명명 파라미터 바인딩을 사용하므로 안전하다.
-> 즉 **이 프로젝트의 정상 검색 기능은 안전하며, 취약점은 교육용으로 별도 추가한 것**이다.
+| 계층 | 방법 | 현재 앱 |
+|---|---|---|
+| **근본** | 파라미터 바인딩(`?` / `:name`), JPA 메서드 쿼리 | 정상 검색은 이미 안전 |
+| 보조 | 입력 검증(화이트리스트), 타입 강제 | `@Valid` DTO, `PathVariable Long` |
+| 피해축소 | DB 계정 최소 권한 | (권장) `boot` 계정 권한 축소 |
+| 피해축소 | 오류 메시지 숨김 | `@RestControllerAdvice` |
+| 피해축소 | 민감정보 암호화 | BCrypt 적용됨 |
+| 심화 | WAF/IDS·IPS, 패치, 로깅·모니터링 | (권장) 교재 18장 Snort 연계 |
+
+**WAF/IDS/IPS 약어**
+- **WAF** (Web Application Firewall) — 웹 요청의 공격 패턴 차단
+- **IDS** (Intrusion Detection System) — 침입 **탐지**·경보
+- **IPS** (Intrusion Prevention System) — 침입 **방지**(탐지+차단)
+- 단, 인코딩·변형으로 우회될 수 있어 **파라미터 바인딩을 대체하지 못한다**(보조 수단).
+
+> 기존 `StudentSearchService` + `StudentRepository` 는 JPQL 명명 파라미터 바인딩을 사용하므로 안전하다. 취약점은 교육용으로 별도 추가한 것이다.
+> 상세 방어 대책은 Word 교안 `01_SQL_Injection.docx` 8장 참고.
 
 ---
 
