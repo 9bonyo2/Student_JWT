@@ -116,12 +116,26 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/idor/profiles-s
 
 ## 6. 방어 정리
 
+방어의 핵심은 **"인증(Authentication) ≠ 인가(Authorization)"** 를 분리해, 리소스마다 소유권/역할을 검사하는 것이다.
+
+**현재 앱(Student_JWT) 기준**
+
 | 방법 | 설명 |
 |---|---|
-| **객체 수준 인가** | 요청자와 리소스 소유자를 대조(본인/관리자만 허용) — 가장 근본적 |
-| **함수 수준 인가** | `@PreAuthorize`, `@Secured` 로 역할 검사. 예: `@PreAuthorize("hasRole('ADMIN') or #id == principal.userInfo.id")` |
-| 기본 거부(Deny by default) | 명시적으로 허용하지 않은 접근은 막는다 |
-| 예측 불가 식별자 | 순차 증가 ID 대신 UUID 등으로 열거(enumeration) 난이도를 높인다(보조) |
-| 최소 노출 | 응답 DTO로 필요한 필드만 반환(비밀번호 등 제외) |
+| **객체 수준 인가** | 요청자와 소유자를 대조(본인/관리자만) — `getProfileSecure()` |
+| **실제 `/api/users` 하드닝** | `@PreAuthorize("hasRole('ADMIN') or #id == principal.userInfo.id")` |
+| 일관된 함수 수준 인가 | `StudentController`처럼 쓰기 작업에 `@PreAuthorize` 빠짐없이 |
+| 표준 403 응답 | `@RestControllerAdvice`가 `AccessDeniedException` → 403 변환 |
+| 응답 최소 노출 | DTO로 필요한 필드만(비밀번호 제외) — `ProfileResponse` |
 
-> 근본 방어는 **"인증 != 인가"** 를 분리해 생각하고, 리소스마다 소유권/역할을 검사하는 것이다.
+**일반 대책 (앱 무관)**
+
+- **기본 거부(Deny by default)** — 허용하지 않은 접근은 모두 차단
+- **중앙집중식 인가** — AOP·메서드 시큐리티로 누락 방지
+- **RBAC / ABAC** — 역할/속성 기반 접근 제어 모델
+- **예측 불가 식별자(UUID)** — 열거(enumeration) 완화(보조, 인가 대체 불가)
+- **간접 참조 맵** — 실제 id 대신 사용자별 임시 참조 사용
+- **열거·이상 탐지** — rate limiting, 접근 로깅·모니터링
+- **IDOR 테스트 자동화** — "남의 토큰으로 남의 리소스 접근" 회귀 테스트
+
+> 상세 방어 대책은 Word 교안 `02_Insecure_DOR.docx` 7장 참고.
