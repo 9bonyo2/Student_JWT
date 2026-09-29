@@ -162,7 +162,50 @@ grep "접근 거부" logs/spring.log | tail -1
 
 ---
 
-## 5. 관련 문서
+## 5. 예외 처리 하드닝 (OWASP #10)
 
-- 개념: `OWASP_Top10_2025_한글요약` (#9 보충)
+#9(로깅)와 짝을 이루는 **#10(예외 상황 처리 미흡)** 대응. 예외 발생 시 내부 정보를 노출하지 않고(**fail-closed**), 외부엔 일반 메시지+traceId, 내부 로그엔 상세를 남긴다.
+
+### 5-1. 무엇을 바꿨나 (`DefaultExceptionAdvice`)
+- **500(RuntimeException)** → 일반 메시지+traceId (`e.getMessage()` 숨김)
+- **catch-all** `@ExceptionHandler(Exception.class)` → 안 잡힌 예외도 fail-closed 500
+- **400 파싱 오류**도 일반화(파서 상세 숨김)
+- `server.error.include-*=never` (층 1 기본 오류 처리기 명시)
+
+```java
+private ResponseEntity<ErrorObject> internalError(Exception e, HttpServletRequest request) {
+    String traceId = newTraceId();
+    // 내부 로그: 상세 + traceId
+    log.error("[ERROR][{}] {} {} : {}", traceId, request.getMethod(), request.getRequestURI(), e.getMessage(), e);
+    // 외부 응답: 일반 메시지 + traceId (내부 메시지 숨김)
+    errorObject.setMessage("서버 내부 오류가 발생했습니다. (traceId: " + traceId + ")");
+    ...
+}
+```
+
+### 5-2. 실습 — 500 오류 하드닝 확인
+
+깨진 SQL 페이로드(단일 따옴표)로 500을 유발하고, 외부 응답과 내부 로그를 비교한다.
+```bash
+curl -s -w "\n[HTTP %{http_code}]\n" "http://localhost:8080/api/vuln/sqli/students?name=%27"
+```
+**외부 응답** (일반 메시지+traceId, SQL 상세 없음):
+```json
+{"statusCode":500,"message":"서버 내부 오류가 발생했습니다. (traceId: 9a51a868)", ...}
+```
+**내부 로그** (상세 + 동일 traceId):
+```
+[ERROR][9a51a868] GET /api/vuln/sqli/students : bad SQL grammar [SELECT ... WHERE name LIKE '%'%']
+```
+```bash
+grep "\[ERROR\]" logs/spring.log | tail -1
+```
+
+> **핵심**: `traceId`로 외부 응답과 내부 로그가 연결되며, 외부엔 SQL 내부 구조가 노출되지 않는다. (하드닝 전엔 `e.getMessage()`가 응답에 담겨 SQL 오류가 그대로 노출됐다.)
+
+---
+
+## 6. 관련 문서
+
+- 개념: `OWASP_Top10_2025_한글요약` (#9 로깅 보충 / #10 오류 메시지 숨김의 두 층)
 - 접근 거부(403)가 나온 IDOR: `02_Insecure_DOR`
