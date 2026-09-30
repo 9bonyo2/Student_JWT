@@ -184,36 +184,63 @@ http.csrf(csrf -> csrf.ignoringRequestMatchers("/api/**"));
 
 ---
 
-## 5. 추가 이슈 : 상태 변경 GET (개선)
+## 5. 추가 이슈 : 상태 변경 GET (취약 재현 vs 안전)
 
-`UserController`의 삭제가 `@GetMapping("/delete/{id}")`로 **GET 삭제**였다.
-- **CSRF 토큰은 GET 요청에는 적용되지 않는다.** → CSRF를 켜도 `<img src="http://localhost:8080/users/delete/1">` 한 줄로 삭제가 트리거될 수 있다.
+CSRF의 두 번째 벡터는 **상태 변경을 GET으로 받는 것**이다. **CSRF 토큰은 GET 요청에는 적용되지 않으므로**, CSRF를 켜도 `<img src="http://localhost:8080/users/delete/1">` 한 줄로 삭제가 트리거된다. 이 위험을 직접 눈으로 보기 위해, 이 앱은 **같은 경로에 안전(POST)·취약(GET) 삭제를 함께** 두었다.
 
-### 5-1. 개선 : 삭제를 POST(+CSRF 토큰)로
+### 5-1. 안전 버전 : 삭제를 POST(+CSRF 토큰)로
 
-삭제를 GET에서 POST로 바꾸면 Thymeleaf가 `_csrf` 토큰을 자동 삽입하고, 위조 요청은 토큰이 없어 차단된다.
+삭제는 상태 변경이므로 POST로 받는다. Thymeleaf가 `_csrf` 토큰을 자동 삽입하고, 위조 요청은 토큰이 없어 차단된다.
 ```java
-// 컨트롤러: GET → POST (CSRF 토큰 적용 대상이 됨)
-@PostMapping("/delete/{id}")
-public String deleteUser(@PathVariable long id) { ... }
+@PostMapping("/delete/{id}")          // 안전 ✅ index.html 삭제 폼이 사용
+public String deleteUser(@PathVariable long id) { deleteById(id); return "redirect:/users/index"; }
 ```
 ```html
-<!-- index.html : 삭제 링크(<a GET>) → POST 폼(_csrf 자동 삽입) -->
+<!-- index.html : POST 폼(_csrf 자동 삽입) -->
 <form th:action="@{/users/delete/{id}(id=${user.id})}" method="post" style="display:inline"
       onsubmit="return confirm('Are you sure?')">
   <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
 </form>
 ```
 
-### 5-2. 검증 결과
+### 5-2. 취약 버전(예전 방식) : GET 삭제 — `<img>` 공격 재현
 
-| 동작 | 결과 |
-|---|---|
-| GET 삭제 | **405** (Method Not Allowed) |
-| 🔴 위조 삭제 POST(토큰X) | **403** (CSRF 차단) |
-| 🟢 정상 삭제 POST(토큰O) | **302** (삭제됨) |
+같은 경로에 **GET 핸들러를 함께** 둔다. HTTP 메서드가 달라(GET↔POST) 별도로 매핑되며, GET은 CSRF 토큰 검증 대상이 아니므로 토큰 없이도 실행된다.
+```java
+//[취약 ⚠️ - 공격 재현 실습 전용] GET 은 CSRF 토큰 검증을 우회한다
+@GetMapping("/delete/{id}")
+public String deleteUserLegacyVulnerable(@PathVariable long id) { deleteById(id); return "redirect:/users/index"; }
+```
+공격자 페이지(`csrf_attack.html`)에 아래 한 줄만 있으면, 로그인된 피해자가 그 페이지를 여는 순간 **세션 쿠키(JSESSIONID)가 자동 첨부**되어 삭제가 실행된다.
+```html
+<!-- 이미지 로딩 = GET 요청. _csrf 토큰이 없어도 GET 이라 통과된다 -->
+<img src="http://localhost:8080/users/delete/1" width="1" height="1" />
+```
+**재현 절차**
+1. 삭제해도 되는 사용자(예: id=1)를 목록에 준비
+2. 피해자가 앱에 폼 로그인 (세션 쿠키 보유)
+3. 같은 브라우저로 `csrf_attack.html`(file:// 등 다른 오리진) 열기
+4. 이미지 요청이 나가며 → **id=1 사용자가 삭제됨** (CSRF가 켜져 있어도 GET이라 못 막음)
 
-> **참고**: GET 삭제가 405로 나오려면, #10 예외 하드닝의 catch-all(`@ExceptionHandler(Exception.class)`)이 **표준 MVC 예외(405/404 등)를 삼키지 않도록** 처리해야 한다(`ErrorResponse`는 재던짐). 그렇지 않으면 405가 500으로 바뀐다.
+curl 재현(검증용):
+```bash
+B=http://localhost:8080; JAR=cookies.txt
+curl -s -c $JAR -X POST "$B/login-process" -d "username=user@aa.com&password=pwd2"   # 로그인
+curl -s -b $JAR "$B/users/delete/1"     # GET 삭제 = 위조 성공 (토큰 없이 302 redirect)
+```
+
+### 5-3. 진짜 방어 : GET 핸들러 제거
+
+`<img>` GET 삭제는 **CSRF 토큰으로 막을 수 없다.** 유일한 방어는 **상태 변경을 GET으로 받지 않는 것** — 즉 GET 핸들러를 제거하고 POST(+`_csrf`)만 남기는 것이다.
+
+| 동작 | 안전 POST만 있을 때 | 취약 GET이 있을 때 |
+|---|---|---|
+| `<img>` GET 삭제 | **405** (거부) ✅ | **302** (삭제됨) 🔴 |
+| 🔴 위조 삭제 POST(토큰X) | **403** (CSRF 차단) ✅ | **403** ✅ |
+| 🟢 정상 삭제 POST(토큰O) | **302** (삭제됨) ✅ | **302** ✅ |
+
+> **교육 포인트**: "토큰만 켜면 안전"이 아니다. **GET으로 상태를 바꾸는 설계 자체**가 CSRF 토큰을 무력화한다. 방어는 토큰 + "상태 변경은 비-GET" 두 가지가 함께여야 한다.
+> **참고**: GET 삭제를 제거한 뒤 405가 500으로 바뀌지 않으려면, #10 예외 하드닝의 catch-all(`@ExceptionHandler(Exception.class)`)이 표준 MVC 예외(405/404 등)를 삼키지 않아야 한다(`ErrorResponse`는 재던짐).
 
 ---
 

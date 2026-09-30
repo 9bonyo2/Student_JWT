@@ -61,15 +61,34 @@ public class UserController {
         return "redirect:/users/index";   //존재하는 경로로 리다이렉트
     }
 
-    //[CSRF 하드닝] 삭제는 상태 변경이므로 GET 이 아니라 POST 로 받는다.
-    //  - GET 이면 CSRF 토큰이 적용되지 않아 <img src=".../delete/1"> 로도 삭제가 트리거된다.
-    //  - POST 로 바꾸면 Thymeleaf 폼의 _csrf 토큰이 요구되어 위조 요청이 차단된다.
+    //[안전 ✅][CSRF 하드닝] 삭제는 상태 변경이므로 GET 이 아니라 POST 로 받는다.
+    //  - Thymeleaf 삭제 폼(index.html)이 hidden _csrf 토큰을 자동 삽입한다.
+    //  - 토큰이 없거나 틀린 위조 요청은 403 으로 차단된다.
     @PostMapping("/delete/{id}")
     public String deleteUser(@PathVariable("id") long id) {
+        deleteById(id);
+        return "redirect:/users/index";
+    }
+
+    //[취약 ⚠️ - 예전 방식 / CSRF 공격 재현 실습 전용]
+    //  같은 경로(/users/delete/{id}) 이지만 HTTP 메서드가 GET 이라 위 POST 와 별도 핸들러로 매핑된다.
+    //  - GET 은 CSRF 토큰 검증 대상이 아니므로(안전 메서드로 취급) 토큰 없이도 실행된다.
+    //  - 따라서 공격자 페이지에 아래 한 줄만 넣어도, 로그인된 피해자의 세션 쿠키(JSESSIONID)가
+    //    자동 첨부되어 삭제가 트리거된다 :
+    //        <img src="http://localhost:8080/users/delete/1">
+    //  - 실무에서는 절대 두면 안 되는 안티패턴이다. 오직 공격 재현 실습을 위해 남긴다.
+    //  - 방어 : 이 GET 핸들러를 제거하고 위의 POST(+_csrf 토큰) 만 남기면 재현이 불가능해진다.
+    @GetMapping("/delete/{id}")
+    public String deleteUserLegacyVulnerable(@PathVariable("id") long id) {
+        deleteById(id);
+        return "redirect:/users/index";
+    }
+
+    //삭제 공통 로직 (안전 POST / 취약 GET 이 함께 사용)
+    private void deleteById(long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Invalid user Id:" + id));
         userRepository.delete(user);
-        return "redirect:/users/index";
     }
 
     @GetMapping("/thymeleaf")
