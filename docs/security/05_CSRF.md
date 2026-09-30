@@ -222,16 +222,26 @@ public String deleteUserLegacyVulnerable(@PathVariable long id) { deleteById(id)
 - 성공시키려면 **같은 site**에서 서빙(`http://localhost:5500`, 호스트명을 `localhost`로) + 로그인 상태여야 한다.
 - 서버 취약점만 확실히 보려면 아래 **curl**이 가장 명확하다(브라우저 계층 우회).
 
-curl 재현 (검증됨, 2026-09-30):
+curl 재현 (검증됨, 2026-09-30). **`{id}`는 자리표시자다** — 그대로 실행하면 `long` 변환 실패로 500이 난다. 아래는 삭제할 **테스트 User를 스스로 만들어** `$ID`에 담으므로 실데이터를 건드리지 않는다.
 ```bash
 B=http://localhost:8080; JAR=cookies.txt
-# CSRF 활성 상태라 로그인도 _csrf 토큰이 필요 → GET /login 에서 추출
+# 0) 삭제 대상 테스트 User 생성 (JWT 발급 → POST /api/users → 생성된 id 획득)
+TOKEN=$(curl -s -X POST "$B/api/userinfos/login" -H "Content-Type: application/json" \
+  -d '{"email":"admin@aa.com","password":"pwd1"}' | python -c "import sys,json;print(json.load(sys.stdin)['accessToken'])")
+ID=$(curl -s -X POST "$B/api/users" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"victim","email":"victim@test.local"}' | python -c "import sys,json;print(json.load(sys.stdin)['id'])")
+echo "target ID=$ID"
+
+# 1) 세션 로그인 (CSRF 활성이라 _csrf 필요 → GET /login 에서 추출)
 CSRF=$(curl -s -c $JAR "$B/login" | grep -oP 'name="_csrf"[^>]*value="\K[^"]+')
 curl -s -b $JAR -c $JAR -X POST "$B/login-process" \
   --data-urlencode "username=user@aa.com" --data-urlencode "password=pwd2" \
-  --data-urlencode "_csrf=$CSRF"                 # 세션 인증(302)
-curl -s -o /dev/null -w "%{http_code}\n" -b $JAR "$B/users/delete/{id}"  # 세션 쿠키만, 토큰X
+  --data-urlencode "_csrf=$CSRF"                          # 세션 인증(302)
+
+# 2) 세션 쿠키만(토큰X)으로 GET 삭제 = <img> 재현
+curl -s -o /dev/null -w "GET delete -> %{http_code}\n" -b $JAR "$B/users/delete/$ID"   # 302 = 삭제됨
 ```
+> 직접 만든 사용자 대신 목록의 실제 id를 지우려면 `ID=1` 처럼 **존재하는 값**으로 바꿔 쓴다(그 사용자는 삭제된다).
 
 **검증 결과** — 동일하게 *세션 쿠키만 보내고 `_csrf`는 없이* 삭제 시도(대비):
 
