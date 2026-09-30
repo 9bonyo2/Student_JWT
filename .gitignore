@@ -36,3 +36,5 @@ build/
 docs/*.bak*
 
 logs/
+
+cookies.txt
