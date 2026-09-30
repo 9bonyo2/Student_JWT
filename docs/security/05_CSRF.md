@@ -216,18 +216,31 @@ public String deleteUserLegacyVulnerable(@PathVariable long id) { deleteById(id)
 <!-- 이미지 로딩 = GET 요청. _csrf 토큰이 없어도 GET 이라 통과된다 -->
 <img src="http://localhost:8080/users/delete/1" width="1" height="1" />
 ```
-**재현 절차**
-1. 삭제해도 되는 사용자(예: id=1)를 목록에 준비
-2. 피해자가 앱에 폼 로그인 (세션 쿠키 보유)
-3. 같은 브라우저로 `csrf_attack.html`(file:// 등 다른 오리진) 열기
-4. 이미지 요청이 나가며 → **id=1 사용자가 삭제됨** (CSRF가 켜져 있어도 GET이라 못 막음)
+**브라우저 재현 시 주의(SameSite/CORS)**: `<img>` 자동 공격은 브라우저 방어 계층 때문에 조건이 까다롭다.
+- `file://` → Origin이 `null`이라 앱의 CORS 필터가 거부("Invalid CORS request")
+- `127.0.0.1:5500` → `localhost:8080`과 **다른 site**라 SameSite=Lax가 쿠키를 막음(크로스사이트 `<img>` 차단 = 브라우저 보조 방어)
+- 성공시키려면 **같은 site**에서 서빙(`http://localhost:5500`, 호스트명을 `localhost`로) + 로그인 상태여야 한다.
+- 서버 취약점만 확실히 보려면 아래 **curl**이 가장 명확하다(브라우저 계층 우회).
 
-curl 재현(검증용):
+curl 재현 (검증됨, 2026-09-30):
 ```bash
 B=http://localhost:8080; JAR=cookies.txt
-curl -s -c $JAR -X POST "$B/login-process" -d "username=user@aa.com&password=pwd2"   # 로그인
-curl -s -b $JAR "$B/users/delete/1"     # GET 삭제 = 위조 성공 (토큰 없이 302 redirect)
+# CSRF 활성 상태라 로그인도 _csrf 토큰이 필요 → GET /login 에서 추출
+CSRF=$(curl -s -c $JAR "$B/login" | grep -oP 'name="_csrf"[^>]*value="\K[^"]+')
+curl -s -b $JAR -c $JAR -X POST "$B/login-process" \
+  --data-urlencode "username=user@aa.com" --data-urlencode "password=pwd2" \
+  --data-urlencode "_csrf=$CSRF"                 # 세션 인증(302)
+curl -s -o /dev/null -w "%{http_code}\n" -b $JAR "$B/users/delete/{id}"  # 세션 쿠키만, 토큰X
 ```
+
+**검증 결과** — 동일하게 *세션 쿠키만 보내고 `_csrf`는 없이* 삭제 시도(대비):
+
+| 요청 | 전송 | 결과 |
+|---|---|---|
+| `GET /users/delete/{id}` | JSESSIONID만 (토큰X) | **302 → 삭제됨** 🔴 (GET은 CSRF 미검증) |
+| `POST /users/delete/{id}` | JSESSIONID만 (토큰X) | **403 → 차단** ✅ (POST는 토큰 필수) |
+
+> 두 요청은 **HTTP 메서드만 다르다.** GET은 삭제 성공, POST는 403 → "상태 변경을 GET으로 두는 설계" 자체가 CSRF 토큰을 무력화함을 실측으로 확인.
 
 ### 5-3. 진짜 방어 : GET 핸들러 제거
 
