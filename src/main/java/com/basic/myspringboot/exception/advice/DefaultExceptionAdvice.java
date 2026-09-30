@@ -113,7 +113,12 @@ public class DefaultExceptionAdvice {
 
     //[#10 하드닝] catch-all : 위에서 잡히지 않은 모든 예외(checked 포함)를 fail-closed 로 처리
     @ExceptionHandler(Exception.class)
-    protected ResponseEntity<ErrorObject> handleUnexpected(Exception e, HttpServletRequest request) {
+    protected ResponseEntity<ErrorObject> handleUnexpected(Exception e, HttpServletRequest request) throws Exception {
+        //Spring MVC 표준 예외(405 Method Not Allowed, 404, 415 등)는 자체 상태코드를 가진다.
+        //이들까지 500 으로 바꾸면 안 되므로, 삼키지 말고 프레임워크 기본 처리기에 넘긴다.
+        if (e instanceof org.springframework.web.ErrorResponse) {
+            throw e;
+        }
         return internalError(e, request);
     }
 
