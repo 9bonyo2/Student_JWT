@@ -1,0 +1,236 @@
+# 05. CSRF (Cross-Site Request Forgery) 실습
+
+> OWASP Top 10 2025 **#1 접근 제어 실패**(넓게) 
+> 브랜치: `feature/csrf-demo`
+> 대상 코드: `com.basic.myspringboot.vuln.csrf` + `SecurityConfig`(세션 체인)
+
+---
+
+## 1. 개념 요약
+
+**CSRF(Cross-Site Request Forgery, 사이트 간 요청 위조)** 는 **로그인된 사용자의 브라우저**가 공격자의 페이지에 의해, 본인도 모르게 상태 변경 요청(비밀번호 변경·이체 등)을 보내게 되는 공격이다.
+
+- 브라우저는 특정 사이트로 요청할 때 **그 사이트의 쿠키(JSESSIONID 등)를 자동 첨부**한다.
+- 공격자는 피해자를 자기 페이지로 유인해, 피해자 몰래 대상 사이트로 **위조 요청**을 보낸다.
+- 대상 사이트가 "이 요청이 정말 우리 화면에서 온 것인지"를 검증하지 않으면 그대로 실행된다.
+
+**핵심**: CSRF는 **세션+쿠키 기반 인증**의 문제다. JWT를 `Authorization` 헤더로 보내는 REST는 쿠키가 자동 전송되지 않아 CSRF 위험이 낮다.
+
+---
+
+## 2. 이 앱의 취약점
+
+`SecurityConfig`의 **세션(폼 로그인) 체인에 CSRF가 비활성화**되어 있었다.
+```java
+// (취약) 세션+쿠키 기반인데 CSRF 보호가 꺼져 있음
+return http.csrf(csrf -> csrf.disable()) ...
+```
+→ 로그인된 사용자를 노려 비밀번호 변경 등 위조 요청이 가능하다.
+
+**표적 엔드포인트** (세션 인증): `POST /users/change-password` (로그인 사용자의 비밀번호 변경)
+
+### 2-1. CsrfDemoController (데모 컨트롤러)
+
+세션 인증 하에서 **로그인 사용자의 비밀번호를 변경**하는 데모 엔드포인트다. `GET`은 폼, `POST`는 변경 처리이며, 로그인 주체(`UserInfoUserDetails`)의 `UserInfo` 비밀번호를 BCrypt로 바꾼다.
+
+```java
+@Controller
+@RequestMapping("/users")
+public class CsrfDemoController {
+    @GetMapping("/change-password")           // 변경 폼
+    public String form() { return "change-password"; }
+
+    @PostMapping("/change-password")          // 변경 처리 = CSRF 표적
+    public String changePassword(@RequestParam String newPassword,
+                                 @AuthenticationPrincipal UserInfoUserDetails me, Model model) {
+        UserInfo user = userInfoRepository.findByEmail(me.getUsername()).orElseThrow(...);
+        user.setPassword(passwordEncoder.encode(newPassword));   // 상태 변경
+        userInfoRepository.save(user);
+        return "change-password";
+    }
+}
+```
+- 이 **POST가 CSRF의 표적**이다. 폼(`change-password.html`)은 `th:action`이라 CSRF 활성 시 `_csrf` 토큰이 자동 삽입되고, 공격자 페이지의 위조 요청은 토큰이 없어 차단된다.
+
+### 2-2. change-password.html (비밀번호 변경 폼)
+
+Thymeleaf 폼 페이지. `th:action`으로 POST하며, CSRF 활성 시 hidden `_csrf` 토큰이 자동 삽입된다.
+```html
+<form th:action="@{/users/change-password}" method="post">
+  <input type="password" name="newPassword" required />
+  <button type="submit">변경</button>
+  <!-- CSRF 활성 시 여기에 <input type="hidden" name="_csrf" ...> 자동 삽입 -->
+</form>
+```
+- **접근 경로**: 로그인 후 네비게이션(navbar)의 "비밀번호 변경" 링크(`sec:authorize="isAuthenticated()"`)로 들어간다.
+- 정상 폼은 토큰이 있어 통과, 공격자 페이지의 위조 폼은 토큰이 없어 **403**.
+
+### 2-3. PRG(Post-Redirect-Get) 패턴
+
+비밀번호 변경(POST) 처리 후, 변경 폼에 머물지 않고 다른 경로(`/users/index`)로 **리다이렉트**한다. 성공 메시지는 **flash attribute**로 전달한다.
+```java
+// 변경 처리 후
+redirectAttributes.addFlashAttribute("msg", email + " 의 비밀번호가 변경되었습니다.");
+return "redirect:/users/index";   // 폼에 머물지 않고 이동
+```
+**PRG = POST → Redirect → GET.** 이점:
+- **새로고침 시 폼 재제출(중복 변경) 방지** — POST 결과 화면을 새로고침하면 브라우저가 "재전송?"을 묻는 문제를 없앤다
+- 성공 메시지를 flash로 한 번만 표시(리다이렉트된 페이지에서)
+- 사용자가 변경 폼에 머물지 않고 목록으로 자연스럽게 이동
+
+> 흐름: 변경 POST → **302 redirect** → GET `/users/index` → 성공 메시지(alert) 표시 (검증됨)
+
+---
+
+## 3. 공격 실습 (취약 상태)
+
+### 3-1. 공격자 페이지
+`docs/security/csrf_attack.html` — 방문하면 `onload`로 위조 폼이 자동 제출된다.
+```html
+<body onload="document.getElementById('csrf').submit()">
+  <form id="csrf" action="http://localhost:8080/users/change-password" method="post">
+    <input type="hidden" name="newPassword" value="attacker_pw_1234" />
+  </form>
+</body>
+```
+
+### 3-2. 시나리오
+1. 피해자가 앱에 폼 로그인 (세션 쿠키 `JSESSIONID` 보유)
+2. 피해자가 공격자 페이지 방문 (메일·링크로 유도)
+3. 브라우저가 위조 요청을 보내며 **세션 쿠키를 자동 첨부**
+4. CSRF 보호가 없으면 → **비밀번호가 `attacker_pw_1234`로 변경** → 계정 탈취
+
+### 3-3. curl 재현 (검증됨)
+```bash
+B=http://localhost:8080; JAR=cookies.txt
+# 1) 피해자 로그인 → 세션 쿠키
+curl -s -c $JAR -X POST "$B/login-process" -d "username=user@aa.com&password=pwd2"
+# 2) 위조 요청 (쿠키O, CSRF 토큰X)
+curl -s -b $JAR -X POST "$B/users/change-password" -d "newPassword=attacker_pw_1234"
+# 3) 공격자 비번으로 로그인 → 성공하면 탈취 완료
+curl -s -X POST "$B/api/userinfos/login" -H "Content-Type: application/json" \
+  -d '{"email":"user@aa.com","password":"attacker_pw_1234"}'
+```
+결과: 위조 POST **HTTP 200**, 공격자 비번 로그인 **HTTP 200** → **CSRF 공격 성공(계정 탈취)**
+
+### 3-4. CSRF 설정 on/off 결과 비교
+
+같은 공격 절차를 CSRF 비활성/활성에서 각각 실행한 결과(검증됨):
+
+| 단계 | CSRF **비활성**(취약) | CSRF **활성**(안전) |
+|---|---|---|
+| 로그인(토큰없이) | **302** 성공 | **403** (로그인도 토큰 필요) |
+| 위조 change-password | **200** (비번 변경) | **403** 차단 |
+| 공격자 비번 로그인 | **200** (탈취) | **401** 실패 |
+
+> **주의**: CSRF 비활성으로 바꾼 뒤에도 로그인이 403이면, `csrf.disable()` 변경 후 **앱을 재시작하지 않은 것**이다(변경 미적용). 취약 상태에선 로그인이 **302**로 성공해야 한다.
+> CSRF 활성 시엔 로그인조차 토큰이 필요하므로, curl로 로그인하려면 먼저 `GET /login`에서 `_csrf` 토큰을 받아야 한다. (브라우저 폼은 Thymeleaf가 자동 처리)
+
+---
+
+## 4. 방어 (안전 버전)
+
+세션 체인의 CSRF 보호를 **켠다**(Spring Security 기본값). JWT 체인은 헤더 기반이라 그대로 둔다.
+```java
+// (안전) 세션+쿠키 기반이므로 CSRF 보호 활성화(기본값). csrf.disable() 제거
+return http
+        .authorizeHttpRequests(auth -> { ... })
+        .formLogin( ... )
+```
+- **Thymeleaf 폼**(`th:action`)에는 hidden `_csrf` 토큰이 **자동 삽입**되어 정상 동작
+- 공격자 페이지의 위조 요청은 **토큰이 없어 403**으로 거부
+
+### 검증 (안전 상태, 검증됨)
+| 테스트 | 결과 |
+|---|---|
+| `/login` 폼의 `_csrf` 토큰 | 자동 주입됨 (`nKFCV2ulcr0_...`) |
+| 정상 로그인 (토큰 포함) | **302** ✅ |
+| 🔴 위조 요청 (토큰 없음) | **403** (차단) ✅ |
+| 🟢 정상 변경 (토큰 포함) | **200** ✅ |
+
+> **교육 포인트**: "REST(JWT 헤더)는 CSRF를 꺼도 되지만, 세션+쿠키는 반드시 켜야 한다." 인증 방식에 따라 CSRF 판단이 다르다.
+
+### 4-1. 명시적 CSRF 설정
+
+Spring Security는 CSRF가 **기본 활성**이라 아무것도 안 하면 켜진다. 명시하거나 토큰 저장소를 바꾸려면:
+
+```java
+// (1) 기본값으로 명시적 활성화
+http.csrf(Customizer.withDefaults());
+
+// (2) 토큰 저장소를 세션에 (기본 동작을 명시)
+http.csrf(csrf -> csrf.csrfTokenRepository(new HttpSessionCsrfTokenRepository()));
+
+// (3) SPA용: JS가 읽을 수 있는 쿠키에 토큰 저장
+http.csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()));
+
+// (4) 특정 경로만 예외(예: 순수 REST)
+http.csrf(csrf -> csrf.ignoringRequestMatchers("/api/**"));
+```
+> 이 앱은 JWT 체인(`/api/**`)은 `csrf.disable()`, 세션 체인은 기본 활성(disable 제거)으로 인증 방식별로 구분했다.
+
+### 4-2. Thymeleaf 폼의 `_csrf` 자동 삽입 원리
+
+- Spring Security가 `RequestDataValueProcessor`(CsrfRequestDataValueProcessor)를 제공하고, Thymeleaf가 `th:action` 폼을 렌더링할 때 이 프로세서를 호출해 **hidden `_csrf` 필드를 자동 추가**한다. (`thymeleaf-extras-springsecurity6` 의존성이 있으면 동작)
+- 렌더링 결과(브라우저가 받는 HTML):
+```html
+<form action="/users/change-password" method="post">
+  <input type="hidden" name="_csrf" value="nKFCV2ulcr0_lR56..."/>
+  ...
+</form>
+```
+- 그래서 `th:action` 폼은 개발자가 토큰을 신경 쓰지 않아도 되고, **공격자 페이지는 이 토큰 값을 알 수 없어 403**이 된다.
+- AJAX/수동 요청은 `${_csrf.token}`, `${_csrf.headerName}`으로 토큰을 꺼내 헤더/파라미터에 넣는다.
+
+---
+
+## 5. 추가 이슈 : 상태 변경 GET (개선)
+
+`UserController`의 삭제가 `@GetMapping("/delete/{id}")`로 **GET 삭제**였다.
+- **CSRF 토큰은 GET 요청에는 적용되지 않는다.** → CSRF를 켜도 `<img src="http://localhost:8080/users/delete/1">` 한 줄로 삭제가 트리거될 수 있다.
+
+### 5-1. 개선 : 삭제를 POST(+CSRF 토큰)로
+
+삭제를 GET에서 POST로 바꾸면 Thymeleaf가 `_csrf` 토큰을 자동 삽입하고, 위조 요청은 토큰이 없어 차단된다.
+```java
+// 컨트롤러: GET → POST (CSRF 토큰 적용 대상이 됨)
+@PostMapping("/delete/{id}")
+public String deleteUser(@PathVariable long id) { ... }
+```
+```html
+<!-- index.html : 삭제 링크(<a GET>) → POST 폼(_csrf 자동 삽입) -->
+<form th:action="@{/users/delete/{id}(id=${user.id})}" method="post" style="display:inline"
+      onsubmit="return confirm('Are you sure?')">
+  <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+</form>
+```
+
+### 5-2. 검증 결과
+
+| 동작 | 결과 |
+|---|---|
+| GET 삭제 | **405** (Method Not Allowed) |
+| 🔴 위조 삭제 POST(토큰X) | **403** (CSRF 차단) |
+| 🟢 정상 삭제 POST(토큰O) | **302** (삭제됨) |
+
+> **참고**: GET 삭제가 405로 나오려면, #10 예외 하드닝의 catch-all(`@ExceptionHandler(Exception.class)`)이 **표준 MVC 예외(405/404 등)를 삼키지 않도록** 처리해야 한다(`ErrorResponse`는 재던짐). 그렇지 않으면 405가 500으로 바뀐다.
+
+---
+
+## 6. 방어 정리
+
+| 방법 | 설명 |
+|---|---|
+| **CSRF 토큰** | 세션+쿠키 기반은 CSRF 보호 활성화 (Spring Security 기본, Thymeleaf 자동 주입) |
+| **상태 변경은 비-GET** | 삭제·변경을 GET으로 두지 않기 (GET은 CSRF 토큰 미적용) |
+| SameSite 쿠키 | `SameSite=Lax/Strict`로 쿠키의 교차 사이트 전송 제한(보조) |
+| Referer/Origin 검증 | 요청 출처 확인(보조) |
+| 재인증 | 민감 작업(비번 변경)에 현재 비밀번호 재확인 |
+
+> REST(JWT 헤더)는 쿠키 자동 전송이 없어 CSRF 위험이 낮지만, **JWT를 쿠키에 저장하면 다시 CSRF 대상**이 된다.
+
+---
+
+## 7. 관련 문서
+- 개념: `OWASP_Top10_2025_한글요약` (#1 접근제어 vs #7 인증)
+- 로깅: 비밀번호 변경은 `[AUDIT]` 로그로 기록됨 (`04_Logging_Hardening`)

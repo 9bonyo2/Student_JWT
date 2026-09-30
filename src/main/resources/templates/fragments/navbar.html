@@ -18,6 +18,8 @@
             <div class="navbar-nav mx-auto">
 <!--                <button class="btn btn-light ms-3">Login</button>-->
                 <a sec:authorize="!isAuthenticated()" class="btn btn-light" th:href="@{/login}">Login</a>
+                <!-- 로그인한 사용자만: 비밀번호 변경 페이지(정상 CSRF 흐름 확인용) -->
+                <a sec:authorize="isAuthenticated()" class="btn btn-outline-light me-2" th:href="@{/users/change-password}">비밀번호 변경</a>
                 <form th:action="@{/app-logout}" method="POST" sec:authorize="isAuthenticated()">
                     <button class="btn btn-light" type="submit">Logout</button>
                 </form>

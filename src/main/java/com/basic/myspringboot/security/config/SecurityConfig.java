@@ -81,7 +81,12 @@ public class SecurityConfig {
             throws Exception {
         //securityMatcher 를 지정하지 않아 '모든 요청'을 담당하는 catch-all 체인이며,
         //@Order(2) 로 가장 마지막에 게시되어야 한다.(/api/** 는 위 JWT 체인이 먼저 처리)
-        return http.csrf(csrf -> csrf.disable())
+        //[CSRF 하드닝] (OWASP #1) 세션+쿠키 기반이므로 CSRF 보호를 켠다(Spring Security 기본값).
+        //  - Thymeleaf 폼(th:action)에는 _csrf 토큰이 자동 삽입되어 정상 동작
+        //  - 공격자 페이지의 위조 요청은 토큰이 없어 403 으로 거부됨
+        //  - JWT 체인은 Authorization 헤더 기반이라 위에서 csrf.disable() 을 유지한다
+        return http
+                //.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers("/login/**").permitAll()
                             .requestMatchers("/users/**").authenticated()
