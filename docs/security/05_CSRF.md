@@ -243,6 +243,18 @@ curl -s -o /dev/null -w "GET delete -> %{http_code}\n" -b $JAR "$B/users/delete/
 ```
 > 직접 만든 사용자 대신 목록의 실제 id를 지우려면 `ID=1` 처럼 **존재하는 값**으로 바꿔 쓴다(그 사용자는 삭제된다).
 
+**명령 해설** — 실제 공격은 마지막 한 줄(5)뿐이고, 앞 단계는 그 조건(로그인 세션·삭제 대상)을 curl로 갖추는 준비다.
+
+| 단계 | 명령 | 하는 일 / 이유 |
+|---|---|---|
+| 1 | `TOKEN=…login` | 관리자로 **JWT 발급**. `/api/users`(User 생성)가 인증을 요구하므로 먼저 토큰을 받는다 |
+| 2 | `ID=…/api/users` | 지울 **테스트 User를 생성**하고 응답 JSON에서 `id`를 뽑아 `$ID`에 저장(실데이터 보호) |
+| 3 | `CSRF=…/login` | 로그인 페이지의 hidden `_csrf` 값을 추출. **CSRF가 켜져 있어 로그인 POST에도 토큰이 필요**하다 |
+| 4 | `…/login-process` | username·password·`_csrf`로 **세션 로그인** → 응답 쿠키 `JSESSIONID`가 `$JAR`에 저장(302) |
+| 5 | `…/users/delete/$ID` | **세션 쿠키만**(`-b $JAR`, `_csrf` 없음) 실어 `GET` 삭제. GET이라 토큰 검증을 건너뛰어 302 삭제 → `<img src=".../delete/ID">`가 하는 일 |
+
+> 보조 도구: `python -c "…json…"` 은 응답 JSON에서 값 하나(`accessToken`/`id`)를 꺼내는 용도, `grep -oP '…\K…'` 는 HTML에서 `_csrf` value만 추출하는 용도다.
+
 **검증 결과** — 동일하게 *세션 쿠키만 보내고 `_csrf`는 없이* 삭제 시도(대비):
 
 | 요청 | 전송 | 결과 |
