@@ -45,7 +45,8 @@ public class UserController {
                                  Model model) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Invalid user Id:" + id));
-        model.addAttribute("user", user);
+        //update-user.html 은 th:object="${userForm}" 로 바인딩하므로 userForm 으로 담는다
+        model.addAttribute("userForm", user);
         return "update-user";
     }
     @PostMapping("/update/{id}")
@@ -57,7 +58,7 @@ public class UserController {
             return "update-user";
         }
         userRepository.save(user);
-        return "redirect:/index";
+        return "redirect:/users/index";
     }
 
     @GetMapping("/delete/{id}")
@@ -65,7 +66,7 @@ public class UserController {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Invalid user Id:" + id));
         userRepository.delete(user);
-        return "redirect:/index";
+        return "redirect:/users/index";
     }
 
     @GetMapping("/thymeleaf")
