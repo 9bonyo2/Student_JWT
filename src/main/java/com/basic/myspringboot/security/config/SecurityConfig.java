@@ -61,7 +61,10 @@ public class SecurityConfig {
                         //로그인과 회원가입은 토큰 없이 호출할 수 있어야 한다
                         .requestMatchers("/api/userinfos/welcome",
                                 "/api/userinfos/new",
-                                "/api/userinfos/login").permitAll()
+                                "/api/userinfos/login",
+                                //[2단계] refresh·logout 은 access 토큰이 아니라 refresh 토큰으로 호출한다
+                                "/api/userinfos/refresh",
+                                "/api/userinfos/logout").permitAll()
                         //[교육용] SQL 인젝션 등 취약점 실습 엔드포인트는 인증 없이 접근 허용
                         //( 실무에서는 인증 뒤에 두지만, 인증이 인젝션을 막아 주지는 않는다 )
                         .requestMatchers("/api/vuln/**").permitAll()

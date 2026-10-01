@@ -19,6 +19,9 @@ public class AuthResponse {
     /** 발급된 JWT 액세스 토큰 */
     private String accessToken;
 
+    /** [2단계] 갱신에 쓰는 refresh 토큰 (서버 저장·회전) */
+    private String refreshToken;
+
     /** Authorization 헤더에 사용할 토큰 형식 ( Bearer ) */
     private String tokenType;
 
@@ -34,8 +37,8 @@ public class AuthResponse {
     /** 권한 목록 ( 화면 표시용. 실제 권한 검사는 서버가 한다 ) */
     private List<String> roles;
 
-    public static AuthResponse of(String token, long expiresIn, UserInfoResponse user) {
-        return new AuthResponse(token, "Bearer", expiresIn,
+    public static AuthResponse of(String accessToken, String refreshToken, long expiresIn, UserInfoResponse user) {
+        return new AuthResponse(accessToken, refreshToken, "Bearer", expiresIn,
                 user.getEmail(), user.getName(), user.getRoles());
     }
 }

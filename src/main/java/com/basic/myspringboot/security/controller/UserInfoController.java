@@ -2,9 +2,13 @@ package com.basic.myspringboot.security.controller;
 
 import com.basic.myspringboot.security.controller.dto.AuthRequest;
 import com.basic.myspringboot.security.controller.dto.AuthResponse;
+import com.basic.myspringboot.security.controller.dto.RefreshRequest;
 import com.basic.myspringboot.security.controller.dto.SignUpRequest;
 import com.basic.myspringboot.security.controller.dto.UserInfoResponse;
+import com.basic.myspringboot.security.models.RefreshToken;
 import com.basic.myspringboot.security.models.UserInfoUserDetails;
+import com.basic.myspringboot.security.service.RefreshTokenService;
+import com.basic.myspringboot.security.service.UserInfoUserDetailsService;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.basic.myspringboot.security.jwt.JwtService;
@@ -31,6 +35,8 @@ public class UserInfoController {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
+    private final UserInfoUserDetailsService userDetailsService;
 
     @GetMapping("/welcome")
     public String welcome() {
@@ -74,9 +80,35 @@ public class UserInfoController {
         //인증에 성공하면 principal 에 UserInfoUserDetails 가 들어 있다
         UserInfoUserDetails userDetails = (UserInfoUserDetails) authentication.getPrincipal();
         //[JWT 하드닝] 토큰 subject 로 email(PII) 대신 불투명 식별자(uuid)를 넣는다
-        String token = jwtService.generateToken(userDetails.getUuid());
-        return ResponseEntity.ok(AuthResponse.of(token, jwtService.getAccessExpireSeconds(),
-                UserInfoResponse.from(userDetails)));
+        String accessToken = jwtService.generateToken(userDetails.getUuid());
+        //[2단계] 로그인 시 refresh 토큰도 발급(서버 저장) → 짧은 access 만료 후 재발급에 사용
+        String refreshToken = refreshTokenService.issue(userDetails.getUuid()).getToken();
+        return ResponseEntity.ok(AuthResponse.of(accessToken, refreshToken,
+                jwtService.getAccessExpireSeconds(), UserInfoResponse.from(userDetails)));
+    }
+
+    /**
+     * [2단계] 토큰 갱신. 만료된(또는 곧 만료될) access 대신 refresh 토큰을 제시하면,
+     * 새 access + 새 refresh(회전)를 돌려준다. refresh 가 유효하지 않거나 만료면 401.
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<AuthResponse> refresh(@Valid @RequestBody RefreshRequest request) {
+        //유효하지 않으면 BadCredentialsException → 401 (DefaultExceptionAdvice)
+        RefreshToken rotated = refreshTokenService.rotate(request.getRefreshToken());
+        UserInfoUserDetails userDetails = userDetailsService.loadUserByUuid(rotated.getUserUuid());
+        String accessToken = jwtService.generateToken(userDetails.getUuid());
+        return ResponseEntity.ok(AuthResponse.of(accessToken, rotated.getToken(),
+                jwtService.getAccessExpireSeconds(), UserInfoResponse.from(userDetails)));
+    }
+
+    /**
+     * [2단계] 로그아웃. 제시한 refresh 토큰을 서버에서 폐기한다.
+     * (access 는 stateless 라 만료까지 유효하므로, access 는 짧게 두는 것이 전제)
+     */
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshRequest request) {
+        refreshTokenService.revoke(request.getRefreshToken());
+        return ResponseEntity.noContent().build();
     }
 
     /**
