@@ -270,6 +270,24 @@ JWT 는 **stateless** 라 서버가 발급 후 기억하지 않는다. 그래서
 > ```
 > 환경변수를 설정하지 않고 끄면 기본 공개 secret 으로 되돌아가 **다시 공격이 성공**한다(1단계 데모 상태). 이 환경변수는 그 세션에만 적용되고 커밋되지 않으므로 **데모 전환용으로 안전**하다.
 
+**Q7. `jwt.allow-insecure-secret` 의 기본값만 `false` 로 바꿨더니 기동이 안 됩니다. 왜 그런가요?**
+**버그가 아니라 fail-closed 가 의도대로 작동한 것이다.** `application.properties` 의 `jwt.secret` 은 그대로 **커밋된 공개 기본값**(`KNOWN_WEAK_SECRETS` 에 등록된 값)을 쓰는데, `jwt.allow-insecure-secret` 기본값만 `false` 로 바꾸면:
+
+```java
+boolean weak = ... || KNOWN_WEAK_SECRETS.contains(secret.trim());  // 공개 기본값 → weak=true
+if (!weak) return;
+if (!allowInsecureSecret)                // false 로 바꿨으므로
+    throw new IllegalStateException(...); // → 기동 거부 (BeanInstantiationException 으로 감싸짐)
+```
+**"약한 secret(기본값 그대로) + `allow-insecure-secret=false`"** 조합이 되어, Q3 에서 설명한 **"의도된 안전 동작"**이 그대로 발동한 것이다. `allow-insecure-secret` 과 `jwt.secret` 은 **쌍으로** 바뀌어야 하며, 하나만 바꾸면 이렇게 항상 실패한다.
+
+| 목적 | 해야 할 일 |
+|---|---|
+| 1단계 공격 실습 계속하기(이 브랜치의 기본 목적) | `jwt.allow-insecure-secret=${JWT_ALLOW_INSECURE_SECRET:true}` 로 **되돌린다**(커밋된 원래 값) |
+| "강한 secret 이면 위조가 막힌다" 시연 | `allow-insecure-secret` 은 건드릴 필요 없이 `true` 로 두고, **Q6 처럼 `JWT_SECRET` 환경변수만** 강한 값으로 주입한다 — secret 이 강하면 `weak=false` 가 되어 `allowInsecureSecret` 값 자체를 보지 않는다 |
+
+> 💡 즉 `jwt.allow-insecure-secret` 은 "secret 이 약할 때만" 의미가 있는 **보조 안전장치**다. secret 을 강하게 주입하면 이 플래그를 `true`/`false` 어느 쪽에 둬도 결과는 같다(둘 다 통과).
+
 ---
 
 ## 7. 다음 단계 · 관련 문서
