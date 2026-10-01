@@ -250,17 +250,25 @@ JWT 는 **stateless** 라 서버가 발급 후 기억하지 않는다. 그래서
 > **실습 안내 — 지금 당장 바꿔야 하나?**
 > **아니오.** 1단계 공격 실습(위조 성공 데모)이 목적이면 `application.properties` 의 기본 secret 은 **그대로 두는 것이 의도된 상태**다(공개된 기본값이라 공격이 성공하는 것 자체가 교육 포인트). 대신 secret 을 바꿔서 **"강한 secret 이면 위조가 막힌다"(4-1 안전 버전)** 를 시연해 보고 싶다면:
 >
+> **① `openssl rand -base64 48` 이 뜻하는 것** — `48`은 **시드(seed)가 아니라 "생성할 원본 바이트 수"**다. `openssl rand`는 고정 입력을 받는 게 아니라 **실행할 때마다 OS 의 CSPRNG(암호학적 난수 생성기)에서 새 엔트로피를 가져와** 매번 다른 값을 만든다(재현 불가능해야 비밀로서 의미가 있다). `48`바이트 = 384비트 엔트로피(HS256 최소 권장 256비트보다 넉넉)이고, `-base64`는 그 원본 바이트를 복사·붙여넣기 가능한 문자열로 인코딩하는 것뿐이다(원본 3바이트 → base64 4글자이므로 결과는 64자).
+>
+> **② 생성한 값을 셸(커밋하지 않고 그 세션에만 적용)에 주입**
+>
+> | 셸 | 명령 |
+> |---|---|
+> | PowerShell | `$env:JWT_SECRET = "<생성한 값>"` |
+> | cmd.exe | `set "JWT_SECRET=<생성한 값>"` (⚠️ `=` 양옆에 공백을 넣지 말 것 — `set "NAME=VALUE"`처럼 **이름=값 전체**를 따옴표로 감싼다. `set NAME = "VALUE"`로 쓰면 공백까지 변수 이름/값에 포함돼 버린다) |
+> | Git Bash | `JWT_SECRET="<생성한 값>" ./mvnw.cmd spring-boot:run` (그 실행 한 번에만 적용) |
+>
 > ```powershell
-> # 1) 로컬에서 강한 secret 생성 (Git Bash 등 openssl 있는 셸에서)
-> openssl rand -base64 48
+> # PowerShell 예시 (전체 흐름)
+> openssl rand -base64 48                 # ① 로컬에서 강한 secret 생성 (매번 다른 값)
+> $env:JWT_SECRET = "<위에서 생성한 값>"   # ② 커밋 X, 이 세션에만 적용
+> .\mvnw.cmd spring-boot:run               # cmd.exe 라면 .\ 없이 mvnw.cmd spring-boot:run
 >
-> # 2) application.properties 는 건드리지 않고, 실행 시에만 환경변수로 주입 (PowerShell)
-> $env:JWT_SECRET = "<위에서 생성한 값>"
-> .\mvnw.cmd spring-boot:run
->
-> # 3) 확인: 유출된 "기본" secret 으로 위조한 토큰은 이제 401, 정상 로그인 토큰은 200
+> # 확인: 유출된 "기본" secret 으로 위조한 토큰은 이제 401, 정상 로그인 토큰은 200
 > ```
-> 환경변수를 설정하지 않고 끄면 기본 공개 secret 으로 되돌아가 **다시 공격이 성공**한다(1단계 데모 상태). `$env:JWT_SECRET` 은 그 PowerShell 세션에만 적용되고 커밋되지 않으므로 **데모 전환용으로 안전**하다.
+> 환경변수를 설정하지 않고 끄면 기본 공개 secret 으로 되돌아가 **다시 공격이 성공**한다(1단계 데모 상태). 이 환경변수는 그 세션에만 적용되고 커밋되지 않으므로 **데모 전환용으로 안전**하다.
 
 ---
 
