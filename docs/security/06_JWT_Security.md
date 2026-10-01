@@ -263,6 +263,7 @@ UserInfoUserDetails ud = userDetailsService.loadUserByUuid(uuid);    // uuid 로
 
 **설계**
 - access 만료 짧게(운영 권장 5~15분) / refresh 길게(예: 14일, `jwt.refresh-expire-seconds`)
+- **이 앱의 실제 설정**: refresh 가 생긴 2단계는 access 를 **900초(15분)** 로 단축(1단계는 refresh 가 없어 **3600초(60분)** 유지) — access 를 짧게 둘 수 있는 것 자체가 refresh 도입의 효과
 - 로그인 응답 = `accessToken` + `refreshToken`
 - `POST /api/userinfos/refresh` : refresh 제출 → **새 access + 새 refresh**(기존 refresh 는 1회용으로 폐기 = 회전)
 - `POST /api/userinfos/logout` : refresh 를 서버에서 **폐기**
