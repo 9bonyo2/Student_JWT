@@ -1,8 +1,10 @@
-# 06. JWT 보안 실습
+# 06. JWT 보안 실습 — 2단계 (uuid + Refresh)
 
 > OWASP Top 10 2025 **#7 인증 실패**, **#4 암호화 실패**
-> 브랜치: `feature/jwt-security-demo`
-> 대상 코드: `com.basic.myspringboot.security.jwt`(JwtService·JwtAuthenticationFilter) + `application.properties`
+> 브랜치: `feature/jwt-advanced-demo` (**2단계**, `feature/jwt-security-demo`(1단계)에서 분기)
+> 대상 코드: `com.basic.myspringboot.security.jwt` + `security.models`(UserInfo·RefreshToken) + `security.service`
+>
+> **단계 안내**: **1단계(`feature/jwt-security-demo`)** 는 secret 하드닝까지이고 토큰 subject 가 email 이라 **공격이 성공**한다. **이 2단계**는 ① subject 를 **uuid** 로 바꿔 email 위조를 막고(PII 제거), ② **Refresh 토큰**(서버 저장 + 회전)을 추가한다.
 
 ---
 
@@ -47,7 +49,7 @@ JWT의 안전은 거의 전부 **secret(서명 키) 관리**에 달려 있다. �
 | 1 | **secret이 약함/공개**(소스 하드코딩) | 유출 시 **누구나 admin 토큰 위조** | ① secret을 **env로 분리**·강하게 ② 기동 시 **약한 secret 거부(fail-closed)** | ✅ **코드 추가** |
 | 2 | alg:none·서명 변조 | 서명 우회 | `verifyWith()`로 서명 필수 검증 | 기존 코드(변경 없음) |
 | 3 | payload 노출(base64) | **email 등 PII 유출** | 토큰 subject를 **email→uuid**(불투명 식별자)로, 필터는 uuid로 조회 | ✅ **코드 추가** |
-| 4 | 탈취 토큰 장기 유효 | 로그아웃·탈취 후에도 유효 | **짧은 만료 + Refresh** | 개념 |
+| 4 | 탈취 토큰 장기 유효 | 로그아웃·탈취 후에도 유효 | **짧은 만료 + Refresh**(서버 저장·회전·로그아웃 폐기) | ✅ **2단계 코드** |
 
 > HS256은 **같은 secret으로 서명·검증**한다. 그래서 secret 유출 = 위조 가능 → secret 관리가 JWT 보안의 핵심이다.
 
@@ -253,15 +255,49 @@ UserInfoUserDetails ud = userDetailsService.loadUserByUuid(uuid);    // uuid 로
 - **충분히 길고 무작위**(HS256 ≥ 32바이트, 권장 더 길게), 서비스별로 다르게
 - **주기적 로테이션** + 유출 시 즉시 교체(교체하면 기존 토큰 전부 무효)
 
-### 4-4. 토큰 무효화 부재 → 짧은 만료 (개념)
+### 4-4. 토큰 무효화 → Refresh 토큰 (서버 저장 + 회전) 🆕 2단계 구현
 
-JWT 는 **stateless** 라 서버가 발급 후 기억하지 않는다. 그래서 **탈취/로그아웃된 개별 토큰을 곧바로 무효화하기 어렵다.**
-- 이 앱: 로그아웃 = 클라이언트가 토큰을 버리는 것뿐. **탈취된 토큰은 만료(3600초)까지 유효.**
-- 방어책:
-  - **짧은 access 만료(예: 5~15분)** + **Refresh 토큰**으로 재발급(회전) → 탈취 창(window) 최소화
-  - **서버측 revocation**(선택): `jti`(토큰 고유 id) **denylist**(로그아웃·유출 시 등록), 또는 사용자별 **token-version** 컬럼(비번 변경·강제 로그아웃 시 증가 → 이전 토큰 무효)
-  - 민감 작업은 **재인증**
-- 트레이드오프: revocation 은 서버에 상태를 다시 두는 것이라 JWT 의 stateless 장점을 일부 포기한다. **먼저 "짧은 만료 + Refresh"** 로 대부분의 위험을 줄인다.
+**문제**: JWT access 토큰은 **stateless** 라 서버가 기억하지 않는다. 그래서 탈취/로그아웃된 토큰을 **만료 전에 무효화하기 어렵다.** 1단계는 로그아웃 = 클라이언트가 토큰을 버리는 것뿐이라, 탈취 토큰이 만료까지 유효했다.
+
+**해결(2단계)**: access 는 **짧게** 두고, 만료되면 **Refresh 토큰**으로 새 access 를 받는다. Refresh 는 **JWT 가 아니라 무작위 불투명 문자열**이며 **서버 DB 에 저장**한다 → 서버가 들고 있으므로 **로그아웃·유출 시 폐기**할 수 있고, 갱신 때마다 **교체(회전)** 한다.
+
+**설계**
+- access 만료 짧게(운영 권장 5~15분) / refresh 길게(예: 14일, `jwt.refresh-expire-seconds`)
+- 로그인 응답 = `accessToken` + `refreshToken`
+- `POST /api/userinfos/refresh` : refresh 제출 → **새 access + 새 refresh**(기존 refresh 는 1회용으로 폐기 = 회전)
+- `POST /api/userinfos/logout` : refresh 를 서버에서 **폐기**
+
+**추가/변경 코드(한눈에)**
+
+| 파일 | 구분 | 한 일 |
+|---|---|---|
+| `RefreshToken` | 추가 | 엔티티(token·userUuid·expiresAt). DB 저장 |
+| `RefreshTokenRepository` | 추가 | `findByToken` |
+| `RefreshTokenService` | 추가 | `issue`(발급)·`rotate`(회전)·`revoke`(폐기) |
+| `AuthResponse` / `RefreshRequest` | 수정/추가 | 응답에 `refreshToken` 추가 / 요청 DTO |
+| `UserInfoController` | 수정 | 로그인에 refresh 발급 + `/refresh`·`/logout` |
+| `SecurityConfig` | 수정 | `/refresh`·`/logout` permitAll |
+| `application.properties` | 수정 | `jwt.refresh-expire-seconds` |
+
+```java
+// 회전(RefreshTokenService.rotate): 유효하면 폐기 후 새 토큰 발급
+RefreshToken rt = repository.findByToken(presented)
+        .orElseThrow(() -> new BadCredentialsException("유효하지 않은 refresh"));
+if (rt.getExpiresAt().isBefore(Instant.now())) { repository.delete(rt); throw ...만료; }
+repository.delete(rt);          // 1회용 → 즉시 폐기
+return issue(rt.getUserUuid()); // 새 refresh 발급(회전)
+```
+
+**검증 결과** (test 프로파일, 검증됨):
+
+| 단계 | 결과 |
+|---|---|
+| 로그인 | `accessToken`(JWT) + `refreshToken`(불투명 64자) 발급 ✅ |
+| `POST /refresh`(유효 refresh) | 새 access + **새 refresh**(회전, 값 바뀜) ✅ |
+| 예전 refresh 재사용 | **401** ✅ (1회용 → 폐기됨) |
+| `POST /logout` 후 그 refresh 로 `/refresh` | **401** ✅ (서버에서 폐기) |
+
+> 트레이드오프: refresh 서버 저장은 상태를 다시 두는 것이라 JWT 의 stateless 장점을 일부 포기한다. 대신 **무효화(로그아웃·회전·탈취 대응)** 를 얻는다. 운영 보강: refresh **원문 대신 해시 저장**, 재사용 탐지 시 **해당 사용자 전체 refresh 폐기**.
 
 ---
 
@@ -272,7 +308,7 @@ JWT 는 **stateless** 라 서버가 발급 후 기억하지 않는다. 그래서
 | secret 유출 → 위조 | 강한 secret **env 관리**, 소스에 두지 않기, 기동 시 **약한 secret 거부(fail-closed)**, 로테이션 |
 | `alg:none`·서명 변조 | `verifyWith()` 로 **서명 필수 검증**(이미 적용) |
 | payload 노출 | **민감정보 미포함**(서명일 뿐 암호화 아님). subject 를 email→**uuid**(불투명)로 교체 |
-| 탈취 토큰 장기 유효 | **짧은 만료 + Refresh 회전**, 필요 시 revocation(jti/token-version) |
+| 탈취 토큰 장기 유효 | **짧은 access + Refresh(서버 저장·회전·로그아웃 폐기)** — 2단계 구현 |
 | 전송 중 탈취 | **HTTPS/TLS** 필수(평문 금지) |
 
 ---
@@ -294,9 +330,13 @@ JWT 는 **stateless** 라 서버가 발급 후 기억하지 않는다. 그래서
 **Q5. PII 가 무엇인가요?**
 **개인 식별 정보(Personally Identifiable Information)** — 이름·주민번호·email·전화번호처럼 개인을 알아볼 수 있는 정보다. JWT payload 는 암호화가 아니라 base64 라 누구나 읽으므로 **PII 를 넣지 않는다.** 그래서 이 앱은 토큰 subject 를 **email → uuid**(불투명 식별자)로 바꿨다(4-2 참고).
 
+**Q6. access 와 refresh 토큰의 차이는?**
+**access** 는 API 호출마다 `Authorization` 헤더로 보내는 **단기 JWT**(권한 증표)다. 자주 노출되므로 **짧게** 둔다. **refresh** 는 access 가 만료됐을 때 **새 access 를 받기 위한 장기 자격**으로, 평소엔 보관만 하고 `/refresh` 호출 때만 쓴다. 이 앱의 refresh 는 **JWT 가 아니라 서버 DB 에 저장한 무작위 값**이라 **폐기(로그아웃)·회전**이 가능하다. 요약: **access=짧고 자주, refresh=길고 가끔·서버가 통제**.
+
 ---
 
 ## 7. 관련 문서
+- **이전 단계**: `feature/jwt-security-demo` (**1단계** — secret 하드닝, email subject라 공격 성공 시연)
 - 개념: `OWASP_Top10_2025_한글요약` (#7 인증, #4 암호화 하드닝 체크리스트)
 - 접근 제어: `02_Insecure_DOR` (인증 ≠ 인가 — 위조로 인증돼도 인가는 별개)
 - 프론트: 토큰 저장 위치(sessionStorage/localStorage)와 XSS 연계는 프론트 보안편에서 다룸
