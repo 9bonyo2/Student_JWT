@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 public class UserInfoUserDetails implements UserDetails {
 
     private String email;
+    private String uuid;
     private String password;
     private List<GrantedAuthority> authorities;
     private UserInfo userInfo;
@@ -19,6 +20,7 @@ public class UserInfoUserDetails implements UserDetails {
     public UserInfoUserDetails(UserInfo userInfo) {
         this.userInfo = userInfo;
         this.email=userInfo.getEmail();
+        this.uuid=userInfo.getUuid();
         this.password=userInfo.getPassword();
         //roles 가 비어 있어도 로그인 과정에서 오류가 나지 않도록 방어한다
         String roles = userInfo.getRoles() == null ? "" : userInfo.getRoles();
@@ -43,10 +45,15 @@ public class UserInfoUserDetails implements UserDetails {
     public String getUsername() {
         return email;
     }
-    
+
+    /** 토큰 subject 로 쓰는 불투명 식별자(email 이 아님) */
+    public String getUuid() {
+        return uuid;
+    }
+
     public UserInfo getUserInfo() {
         return userInfo;
-    }    
+    }
 
     @Override
     public boolean isAccountNonExpired() {

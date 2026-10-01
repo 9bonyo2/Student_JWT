@@ -3,6 +3,8 @@ package com.basic.myspringboot.security.models;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.util.UUID;
+
 @Entity
 @AllArgsConstructor
 @NoArgsConstructor
@@ -11,6 +13,12 @@ public class UserInfo {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    //[JWT 하드닝] 토큰 subject 로 쓰는 불투명 식별자.
+    //  로그인에 쓰는 email(PII) 대신 이 값을 토큰에 담아, payload 에 의미있는 정보가 남지 않게 한다.
+    //  외부로 바뀔 일이 없고(updatable=false), 저장 직전 자동 생성된다(@PrePersist).
+    @Column(unique = true, nullable = false, updatable = false, length = 36)
+    private String uuid;
 
     @Column(nullable = false)
     private String name;
@@ -24,4 +32,12 @@ public class UserInfo {
     //"ROLE_USER" 또는 "ROLE_ADMIN,ROLE_USER" 처럼 쉼표로 구분해 저장한다
     @Column(nullable = false)
     private String roles;
+
+    /** 저장 직전 uuid 가 비어 있으면 무작위로 채운다(시드·회원가입 등 모든 생성 경로 공통). */
+    @PrePersist
+    public void ensureUuid() {
+        if (uuid == null || uuid.isBlank()) {
+            uuid = UUID.randomUUID().toString();
+        }
+    }
 }

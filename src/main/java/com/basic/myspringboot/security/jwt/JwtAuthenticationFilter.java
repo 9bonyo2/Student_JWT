@@ -1,5 +1,6 @@
 package com.basic.myspringboot.security.jwt;
 
+import com.basic.myspringboot.security.models.UserInfoUserDetails;
 import com.basic.myspringboot.security.service.UserInfoUserDetailsService;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -10,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
@@ -51,10 +51,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private void authenticate(HttpServletRequest request, String token) {
         try {
-            String username = jwtService.extractUsername(token);
-            UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+            //[JWT 하드닝] 토큰 subject 는 email 이 아니라 uuid 다. uuid 로 우리 사용자를 조회한다.
+            String uuid = jwtService.extractSubject(token);
+            UserInfoUserDetails userDetails = userDetailsService.loadUserByUuid(uuid);
 
-            if (jwtService.validateToken(token, userDetails)) {
+            if (jwtService.validateToken(token, userDetails.getUuid())) {
                 UsernamePasswordAuthenticationToken authToken =
                         new UsernamePasswordAuthenticationToken(userDetails,
                                 null, userDetails.getAuthorities());

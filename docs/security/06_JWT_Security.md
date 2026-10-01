@@ -46,7 +46,7 @@ JWT의 안전은 거의 전부 **secret(서명 키) 관리**에 달려 있다. �
 |---|---|---|---|---|
 | 1 | **secret이 약함/공개**(소스 하드코딩) | 유출 시 **누구나 admin 토큰 위조** | ① secret을 **env로 분리**·강하게 ② 기동 시 **약한 secret 거부(fail-closed)** | ✅ **코드 추가** |
 | 2 | alg:none·서명 변조 | 서명 우회 | `verifyWith()`로 서명 필수 검증 | 기존 코드(변경 없음) |
-| 3 | payload 노출 | 민감정보 유출 | payload에 **민감정보 금지** | 개념 |
+| 3 | payload 노출(base64) | **email 등 PII 유출** | 토큰 subject를 **email→uuid**(불투명 식별자)로, 필터는 uuid로 조회 | ✅ **코드 추가** |
 | 4 | 탈취 토큰 장기 유효 | 로그아웃·탈취 후에도 유효 | **짧은 만료 + Refresh** | 개념 |
 
 > HS256은 **같은 secret으로 서명·검증**한다. 그래서 secret 유출 = 위조 가능 → secret 관리가 JWT 보안의 핵심이다.
@@ -96,7 +96,7 @@ python docs/security/jwt_forge.py admin@aa.com none   # alg:none 토큰 → 서�
 echo "$FT" | cut -d. -f2 | python -c "import sys,base64,json;s=sys.stdin.read().strip();s+='='*(-len(s)%4);print(json.loads(base64.urlsafe_b64decode(s)))"
 # {'sub': 'admin@aa.com', 'iat': ..., 'exp': ...}
 ```
-→ 토큰만 있으면 **누구나 클레임을 읽는다.** 비밀번호·주민번호·권한근거 등 **민감정보를 payload 에 넣지 말 것.**
+→ 토큰만 있으면 **누구나 클레임을 읽는다.** 비밀번호·주민번호·권한근거 등 **민감정보를 payload 에 넣지 말 것.** 이 앱도 원래 subject 에 **email(PII)** 이 들어 있었다 → **4-2 에서 email 대신 불투명 uuid 로 교체**했다.
 
 ---
 
@@ -154,12 +154,52 @@ jwt.allow-insecure-secret=${JWT_ALLOW_INSECURE_SECRET:true}
 
 > 즉 secret 을 강하게 두고 env 로 관리하면, 리포지토리에 남은 기본 secret 이 유출돼도 **위조가 통하지 않는다.**
 
-### 4-2. Secret 관리 원칙
+### 4-2. 토큰 subject 를 uuid 로 (payload 최소화 — PII 제거)
+
+payload 는 공개(base64)이므로 **email 같은 PII 를 넣지 않는다.** 로그인에 쓰는 email 대신 **의미 없는 불투명 식별자(`UserInfo.uuid`)** 를 토큰 subject 로 담고, 필터는 그 uuid 로 사용자를 조회한다.
+
+**바뀐 코드 (Before → After)**
+```java
+// 발급(UserInfoController) : email → uuid
+// Before
+String token = jwtService.generateToken(userDetails.getUsername());   // subject = email(PII)
+// After
+String token = jwtService.generateToken(userDetails.getUuid());       // subject = uuid(불투명)
+```
+```java
+// 검증(JwtAuthenticationFilter) : email 조회 → uuid 조회
+// Before
+String username = jwtService.extractUsername(token);
+UserDetails ud = userDetailsService.loadUserByUsername(username);     // email 로 조회
+// After
+String uuid = jwtService.extractSubject(token);
+UserInfoUserDetails ud = userDetailsService.loadUserByUuid(uuid);     // uuid 로 조회
+```
+
+**변경 파일(7곳)**: `UserInfo`(uuid 컬럼 + `@PrePersist` 자동생성) · `UserInfoRepository`(`findByUuid`) · `UserInfoUserDetails`(`getUuid()`, `getUsername()`은 email 유지) · `UserInfoUserDetailsService`(`loadUserByUuid`) · `JwtService`(`generateToken(uuid)`, `extractSubject`, `validateToken(token, uuid)`) · `JwtAuthenticationFilter` · `UserInfoController`
+
+**검증 결과** (test 프로파일, 검증됨):
+
+| 항목 | 결과 |
+|---|---|
+| 로그인 토큰의 payload | `{"sub":"<uuid>","iat":..,"exp":..}` → **email 없음** ✅ |
+| 정상 토큰으로 `/me` | **200** ✅ (uuid 조회로 정상 인증) |
+| 예전 방식 위조(subject=email, secret 서명) | **401** ✅ (uuid 아님 → 사용자 없음) |
+| 랜덤 uuid 위조(secret 서명) | **401** ✅ (그런 사용자 없음) |
+
+**부가 효과**
+- 토큰에 **PII(email)가 남지 않는다** → 토큰이 노출돼도 로그인 식별자가 드러나지 않음
+- email 을 바꿔도 토큰에 영향 없음(식별자 분리)
+- 방어 심화: secret 이 유출돼도 **유효한 uuid 를 알아야** 위조가 통한다(uuid 는 응답으로 노출하지 않음)
+
+> 주의: 이는 **payload 최소화**이지 암호화가 아니다. uuid 역시 base64 로 보이므로, 민감정보는 여전히 넣지 않는다.
+
+### 4-3. Secret 관리 원칙
 - 소스·`application.properties` 에 **실제 secret 을 두지 않는다**(env/시크릿 매니저)
 - **충분히 길고 무작위**(HS256 ≥ 32바이트, 권장 더 길게), 서비스별로 다르게
 - **주기적 로테이션** + 유출 시 즉시 교체(교체하면 기존 토큰 전부 무효)
 
-### 4-3. 토큰 무효화 부재 → 짧은 만료 (개념)
+### 4-4. 토큰 무효화 부재 → 짧은 만료 (개념)
 
 JWT 는 **stateless** 라 서버가 발급 후 기억하지 않는다. 그래서 **탈취/로그아웃된 개별 토큰을 곧바로 무효화하기 어렵다.**
 - 이 앱: 로그아웃 = 클라이언트가 토큰을 버리는 것뿐. **탈취된 토큰은 만료(3600초)까지 유효.**
@@ -177,7 +217,7 @@ JWT 는 **stateless** 라 서버가 발급 후 기억하지 않는다. 그래서
 |---|---|
 | secret 유출 → 위조 | 강한 secret **env 관리**, 소스에 두지 않기, 기동 시 **약한 secret 거부(fail-closed)**, 로테이션 |
 | `alg:none`·서명 변조 | `verifyWith()` 로 **서명 필수 검증**(이미 적용) |
-| payload 노출 | **민감정보 미포함**(서명일 뿐 암호화 아님) |
+| payload 노출 | **민감정보 미포함**(서명일 뿐 암호화 아님). subject 를 email→**uuid**(불투명)로 교체 |
 | 탈취 토큰 장기 유효 | **짧은 만료 + Refresh 회전**, 필요 시 revocation(jti/token-version) |
 | 전송 중 탈취 | **HTTPS/TLS** 필수(평문 금지) |
 
