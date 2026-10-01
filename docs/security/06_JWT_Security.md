@@ -38,6 +38,19 @@ Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
 - secret **기본값이 소스에 하드코딩**(리포지토리에 공개) → 유출 시 위조
 - **토큰 무효화(로그아웃·revocation)·Refresh 부재** → 탈취 토큰이 만료까지 유효
 
+### 취약점 → 방어 지도 (요약)
+
+JWT의 안전은 거의 전부 **secret(서명 키) 관리**에 달려 있다. 아래 4가지 중 **이번에 코드를 바꾼 것은 #1 하나**다.
+
+| # | 취약점 | 위험 | 방어 | 이번 작업 |
+|---|---|---|---|---|
+| 1 | **secret이 약함/공개**(소스 하드코딩) | 유출 시 **누구나 admin 토큰 위조** | ① secret을 **env로 분리**·강하게 ② 기동 시 **약한 secret 거부(fail-closed)** | ✅ **코드 추가** |
+| 2 | alg:none·서명 변조 | 서명 우회 | `verifyWith()`로 서명 필수 검증 | 기존 코드(변경 없음) |
+| 3 | payload 노출 | 민감정보 유출 | payload에 **민감정보 금지** | 개념 |
+| 4 | 탈취 토큰 장기 유효 | 로그아웃·탈취 후에도 유효 | **짧은 만료 + Refresh** | 개념 |
+
+> HS256은 **같은 secret으로 서명·검증**한다. 그래서 secret 유출 = 위조 가능 → secret 관리가 JWT 보안의 핵심이다.
+
 ---
 
 ## 3. 공격 실습 (취약 상태)
@@ -91,21 +104,43 @@ echo "$FT" | cut -d. -f2 | python -c "import sys,base64,json;s=sys.stdin.read().
 
 ### 4-1. Secret 외부화 + 기동 시 fail-closed
 
-`JwtService` 가 기동 시 **약한/기본 secret 을 감지**해, 운영에서는 취약 상태로 **아예 기동하지 못하게** 한다.
+**이번에 수정한 코드는 여기 하나다.** `JwtService` 생성자가 기동 시 **약한/기본 secret 을 감지**해, 운영에서는 취약 상태로 **아예 기동하지 못하게**(fail-closed) 한다.
+
+**Before — `JwtService` 생성자 (약한 secret도 그대로 사용)**
 ```java
-// jwt.allow-insecure-secret=false(운영) 이고 secret 이 약하면 기동 실패(fail-closed)
-private void validateSecret(String secret, boolean allowInsecureSecret) {
-    boolean weak = secret == null || secret.isBlank()
-            || secret.getBytes(StandardCharsets.UTF_8).length < 32   // HS256 최소 길이
-            || KNOWN_WEAK_SECRETS.contains(secret.trim());            // 알려진 기본/샘플 값
-    if (!weak) return;
-    if (!allowInsecureSecret) throw new IllegalStateException("약한/기본 secret …");
-    log.warn("약한/기본 secret … 실습 전용으로 계속");
+public JwtService(@Value("${jwt.secret}") String secret,
+                  @Value("${jwt.access-expire-seconds}") long accessExpireSeconds) {
+    this.key = Keys.hmacShaKeyFor(secret.getBytes());   // 검증 없이 바로 키 생성
+    this.accessExpireSeconds = accessExpireSeconds;
 }
 ```
+
+**After — 약한/기본/짧은 secret 이면 기동 거부**
+```java
+public JwtService(@Value("${jwt.secret}") String secret,
+                  @Value("${jwt.access-expire-seconds}") long accessExpireSeconds,
+                  @Value("${jwt.allow-insecure-secret:false}") boolean allowInsecureSecret) {
+    validateSecret(secret, allowInsecureSecret);        // ★ 추가: 약하면 기동 실패
+    this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+    this.accessExpireSeconds = accessExpireSeconds;
+}
+
+private void validateSecret(String secret, boolean allowInsecureSecret) {
+    boolean weak = secret == null || secret.isBlank()
+            || secret.getBytes(StandardCharsets.UTF_8).length < 32   // HS256 최소 길이(32바이트)
+            || KNOWN_WEAK_SECRETS.contains(secret.trim());           // 알려진 기본/샘플 값(리포지토리 공개값 포함)
+    if (!weak) return;
+    if (!allowInsecureSecret)                                        // 운영: 취약하면
+        throw new IllegalStateException("약한/기본 secret …");        //   아예 못 뜨게(fail-closed)
+    log.warn("약한/기본 secret … 실습 전용으로 계속");                 // 실습: 경고만 남기고 진행
+}
+```
+
+**`application.properties` — 플래그 추가 (Before에는 없던 줄)**
 ```properties
-# 운영: 환경변수로 강한 secret 주입 + 취약 secret 이면 기동 거부
-jwt.allow-insecure-secret=false
+# true  = 실습(취약 데모 허용: 기본 secret으로도 기동)
+# false = 운영(약한/기본 secret이면 기동 거부). 반드시 JWT_SECRET 주입
+jwt.allow-insecure-secret=${JWT_ALLOW_INSECURE_SECRET:true}
 # JWT_SECRET=<충분히 길고 무작위한 값>   (환경변수/시크릿 매니저)
 ```
 
