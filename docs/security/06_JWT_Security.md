@@ -156,27 +156,41 @@ jwt.allow-insecure-secret=${JWT_ALLOW_INSECURE_SECRET:true}
 
 ### 4-2. 토큰 subject 를 uuid 로 (payload 최소화 — PII 제거)
 
+> **PII(Personally Identifiable Information, 개인 식별 정보)란?** 특정 개인을 **직접**(이름·주민번호·email·전화번호) 또는 **간접**(생년월일·주소·IP)으로 알아볼 수 있는 정보. **JWT payload 는 암호화가 아니라 base64** 라 누구나 읽을 수 있으므로, 토큰·로그·URL 처럼 노출되기 쉬운 곳에는 **PII 를 넣지 않는 것**이 원칙이다.
+
 payload 는 공개(base64)이므로 **email 같은 PII 를 넣지 않는다.** 로그인에 쓰는 email 대신 **의미 없는 불투명 식별자(`UserInfo.uuid`)** 를 토큰 subject 로 담고, 필터는 그 uuid 로 사용자를 조회한다.
 
-**바뀐 코드 (Before → After)**
+#### 수정 요약 — 한눈에 보기 (7곳)
+
+| 파일 | 구분 | 한 일 |
+|---|---|---|
+| `UserInfo` | 수정 | `uuid` 컬럼 추가 + `@PrePersist` 로 저장 직전 자동 생성(시드·회원가입 공통) |
+| `UserInfoRepository` | 추가 | `findByUuid(uuid)` — uuid 로 사용자 조회 |
+| `UserInfoUserDetails` | 수정 | `getUuid()` 추가. `getUsername()`=email 은 유지(기존 코드 보호) |
+| `UserInfoUserDetailsService` | 추가 | `loadUserByUuid(uuid)` — JWT 필터 전용(폼 로그인은 email) |
+| `JwtService` | 수정 | `generateToken(uuid)`, `extractUsername`→`extractSubject`, `validateToken(token, uuid)` |
+| `JwtAuthenticationFilter` | 수정 | email 조회 → **uuid 조회**로 변경 |
+| `UserInfoController` | 수정 | 로그인 성공 시 토큰 subject = **uuid** |
+
+#### 핵심 로직 Before → After
+> 엔티티·레포·서비스는 **새로 추가된 코드**라 Before 가 없다. 동작이 바뀐 핵심은 아래 2곳이다.
+
+**① 발급 (`UserInfoController`)**
 ```java
-// 발급(UserInfoController) : email → uuid
 // Before
-String token = jwtService.generateToken(userDetails.getUsername());   // subject = email(PII)
+String token = jwtService.generateToken(userDetails.getUsername());  // subject = email(PII)
 // After
-String token = jwtService.generateToken(userDetails.getUuid());       // subject = uuid(불투명)
+String token = jwtService.generateToken(userDetails.getUuid());      // subject = uuid(불투명)
 ```
+**② 검증 (`JwtAuthenticationFilter`)**
 ```java
-// 검증(JwtAuthenticationFilter) : email 조회 → uuid 조회
 // Before
 String username = jwtService.extractUsername(token);
-UserDetails ud = userDetailsService.loadUserByUsername(username);     // email 로 조회
+UserDetails ud = userDetailsService.loadUserByUsername(username);    // email 로 조회
 // After
 String uuid = jwtService.extractSubject(token);
-UserInfoUserDetails ud = userDetailsService.loadUserByUuid(uuid);     // uuid 로 조회
+UserInfoUserDetails ud = userDetailsService.loadUserByUuid(uuid);    // uuid 로 조회
 ```
-
-**변경 파일(7곳)**: `UserInfo`(uuid 컬럼 + `@PrePersist` 자동생성) · `UserInfoRepository`(`findByUuid`) · `UserInfoUserDetails`(`getUuid()`, `getUsername()`은 email 유지) · `UserInfoUserDetailsService`(`loadUserByUuid`) · `JwtService`(`generateToken(uuid)`, `extractSubject`, `validateToken(token, uuid)`) · `JwtAuthenticationFilter` · `UserInfoController`
 
 **검증 결과** (test 프로파일, 검증됨):
 
