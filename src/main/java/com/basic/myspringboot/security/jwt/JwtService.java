@@ -6,6 +6,7 @@ import io.jsonwebtoken.security.Keys;
 import io.jsonwebtoken.security.SecureDigestAlgorithm;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
@@ -75,23 +76,18 @@ public class JwtService {
         return accessExpireSeconds;
     }
 
-    /**
-     * [JWT 하드닝] 토큰 subject 로 email(PII) 대신 불투명 식별자(uuid)를 넣는다.
-     * payload 는 base64 라 누구나 읽을 수 있으므로, 의미있는 정보를 남기지 않는다.
-     */
-    public String generateToken(String subject) {
+    public String generateToken(String userName) {
         Date expireDate = Date.from(Instant.now().plusSeconds(accessExpireSeconds));
 
         return Jwts.builder()
                 .signWith(key, ALGORITHM)
-                .subject(subject)        // = UserInfo.uuid
+                .subject(userName)
                 .issuedAt(new Date())
                 .expiration(expireDate)
                 .compact();
     }
 
-    /** 토큰의 subject(= uuid)를 꺼낸다. 서명 불일치·만료면 여기서 JwtException 이 발생한다. */
-    public String extractSubject(String token) {
+    public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
     }
 
@@ -100,12 +96,12 @@ public class JwtService {
     }
 
     /**
-     * 토큰 subject 가 기대한 uuid 와 일치하고 만료되지 않았는지 확인한다.
-     * 서명이 올바르지 않거나 만료된 토큰이면 extractSubject 에서 JwtException 이 발생한다.
+     * 토큰의 사용자와 만료 여부를 확인한다.
+     * 서명이 올바르지 않거나 만료된 토큰이면 JwtException 이 발생한다.
      */
-    public boolean validateToken(String token, String expectedUuid) {
-        final String subject = extractSubject(token);
-        return subject.equals(expectedUuid) && !isTokenExpired(token);
+    public boolean validateToken(String token, UserDetails userDetails) {
+        final String username = extractUsername(token);
+        return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
     }
 
     public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {

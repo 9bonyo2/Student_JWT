@@ -73,8 +73,7 @@ public class UserInfoController {
 
         //인증에 성공하면 principal 에 UserInfoUserDetails 가 들어 있다
         UserInfoUserDetails userDetails = (UserInfoUserDetails) authentication.getPrincipal();
-        //[JWT 하드닝] 토큰 subject 로 email(PII) 대신 불투명 식별자(uuid)를 넣는다
-        String token = jwtService.generateToken(userDetails.getUuid());
+        String token = jwtService.generateToken(userDetails.getUsername());
         return ResponseEntity.ok(AuthResponse.of(token, jwtService.getAccessExpireSeconds(),
                 UserInfoResponse.from(userDetails)));
     }
