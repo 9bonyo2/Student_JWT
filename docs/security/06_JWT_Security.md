@@ -56,24 +56,38 @@ JWT의 안전은 거의 전부 **secret(서명 키) 관리**에 달려 있다. *
 > 취약 상태 = `application.properties` 의 기본 secret + `jwt.allow-insecure-secret=true`
 > 1단계는 토큰 subject 가 **email** 이므로, 아래 공격이 **그대로 성공**한다.
 
-### 3-1. Secret 유출 → 토큰 위조 → 관리자 탈취 ⭐
+### 3-1. Secret 유출 → 토큰 위조 → email 로 role 까지 알아내고 관리자 탈취 ⭐
 
-`application.properties` 의 secret 은 `secret.getBytes()` 로 쓰이므로, HMAC 키 = **그 문자열의 UTF-8(ASCII) 바이트**다. 이 값만 알면 공격자가 **비밀번호 없이** admin 토큰을 직접 서명할 수 있다.
+**이 공격은 2단계로 이어진다**: **① 탈취한 토큰을 디코딩해 email 확인**(아직 role 은 모른다) → **② 그 email 로 새 토큰을 위조**해 `/me` 를 호출하면 **role 까지 드러나고, 동시에 관리자 권한도 얻는다.**
+
+**① 탈취한 토큰 디코딩 → email 확인**
+
+JWT payload 는 암호화가 아니라 base64 이므로, 토큰(`$STOLEN`)만 있으면 누구나 클레임을 읽는다. (가정: 공격자가 XSS·네트워크 스니핑 등 어떤 경로로 로그인된 토큰을 하나 탈취했다.)
+
+```bash
+echo "$STOLEN" | cut -d. -f2 | python -c "import sys,base64,json;s=sys.stdin.read().strip();s+='='*(-len(s)%4);print(json.loads(base64.urlsafe_b64decode(s)))"
+# {'sub': 'admin@aa.com', 'iat': ..., 'exp': ...}
+```
+→ `sub` 에서 **email(`admin@aa.com`)은 알아냈지만, role 은 토큰에 없다**(이 앱은 roles 를 토큰에 넣지 않고 DB 에서 로드한다 — 2절 참고). role 을 알려면 이 email 로 실제 인증을 통과해야 한다.
+
+**② 알아낸 email 로 토큰 위조 → `/me` 호출 → role 까지 확인 + 관리자 권한 획득**
+
+secret 은 `secret.getBytes()` 로 쓰이므로, HMAC 키 = **그 문자열의 UTF-8(ASCII) 바이트**다. 이 값만 알면 공격자가 **비밀번호 없이** ① 에서 알아낸 email 로 직접 서명할 수 있다.
 
 ```bash
 B=http://localhost:8080
-FT=$(python docs/security/jwt_forge.py admin@aa.com)      # admin 토큰 위조
+FT=$(python docs/security/jwt_forge.py admin@aa.com)      # ①에서 알아낸 email 로 위조
 curl -s -w "\n%{http_code}\n" "$B/api/userinfos/me" -H "Authorization: Bearer $FT"
 ```
 **검증 결과** (test 프로파일, 검증됨):
 
 | 요청 | 결과 |
 |---|---|
-| 위조 admin 토큰으로 `/me` | **200** → `{"email":"admin@aa.com","roles":["ROLE_ADMIN","ROLE_USER"]}` 🔴 |
+| 위조 admin 토큰으로 `/me` | **200** → `{"email":"admin@aa.com","roles":["ROLE_ADMIN","ROLE_USER"]}` — **role 도 이 순간 알아낸다** 🔴 |
 
-→ **비밀번호를 몰라도 secret 하나로 관리자 세션을 얻는다.** (roles 는 DB에서 오므로, admin 계정명으로 위조하면 admin 권한을 그대로 획득)
+→ **비밀번호를 몰라도 secret 하나로 email → role → 관리자 세션까지 전부 얻는다.** (roles 는 DB에서 오므로, email 만 알면 위조 토큰으로 role 까지 자동으로 드러난다)
 
-> 💡 2단계에서 subject 를 uuid 로 바꾸면, 이 `jwt_forge.py admin@aa.com`(email) 위조는 **401** 로 막힌다. (= 2단계 방어)
+> 💡 2단계에서 subject 를 uuid 로 바꾸면, ① 에서 탈취한 토큰을 디코딩해도 **email 이 아니라 의미 없는 uuid** 만 보인다. 그 uuid 를 그대로 다시 넣어 위조해도 **원래 소유자 본인으로 검증될 뿐**이라 공격 의미가 없고, admin 의 진짜 uuid 는 애초에 알아낼 방법이 없다 → **401** (= 2단계 방어)
 
 #### `jwt_forge.py` 는 무엇을 하나 (교육용 위조 스크립트)
 
@@ -124,11 +138,7 @@ python docs/security/jwt_forge.py admin@aa.com none   # alg:none 토큰 → 서�
 
 ### 3-3. payload 는 암호화가 아니다 (base64 노출)
 
-```bash
-echo "$FT" | cut -d. -f2 | python -c "import sys,base64,json;s=sys.stdin.read().strip();s+='='*(-len(s)%4);print(json.loads(base64.urlsafe_b64decode(s)))"
-# {'sub': 'admin@aa.com', 'iat': ..., 'exp': ...}
-```
-→ 토큰만 있으면 **누구나 클레임을 읽는다.** 비밀번호·주민번호·권한근거 등 **민감정보를 payload 에 넣지 말 것.** 1단계는 subject 에 **email(PII)** 이 들어 있다 → **2단계에서 불투명 uuid 로 교체**한다.
+3-1 **①** 에서 이미 보았듯, JWT 의 payload 는 base64 인코딩일 뿐 암호화가 아니다. 토큰만 있으면 서버 없이도 **누구나 클레임을 읽는다.** 비밀번호·주민번호·권한근거 등 **민감정보를 payload 에 넣지 말 것.** 1단계는 subject 에 **email(PII)** 이 들어 있다 → **2단계에서 불투명 uuid 로 교체**한다.
 
 ---
 
