@@ -5,202 +5,57 @@
 > 대상 코드: `com.basic.myspringboot.security.jwt` + `security.models`(UserInfo·RefreshToken) + `security.service`
 >
 > **단계 안내**: **1단계(`feature/jwt-security-demo`)** 는 secret 하드닝까지이고 토큰 subject 가 email 이라 **공격이 성공**한다. **이 2단계**는 ① subject 를 **uuid** 로 바꿔 email 위조를 막고(PII 제거), ② **Refresh 토큰**(서버 저장 + 회전)을 추가한다.
+>
+> **이 문서는 2단계에서 달라진 부분만 다룬다.** JWT 개념, 서명 검증(`verifyWith`), `alg:none`·서명 변조 차단, secret 외부화·기동 시 fail-closed 하드닝 등 **1단계와 공통인 내용은 중복 기술하지 않는다** → `feature/jwt-security-demo` 의 `06_JWT_Security.md` 참고.
 
 ---
 
-## 1. 개념 요약
+## 1. 2단계에서 바뀐 것 (요약)
 
-**JWT(JSON Web Token)** 는 `header.payload.signature` 세 부분을 `.` 으로 이은 문자열이다(각각 base64url).
-- **header**: 알고리즘 등 (예: `{"alg":"HS256"}`)
-- **payload**: 클레임 (예: `{"sub":"admin@aa.com","iat":..,"exp":..}`)
-- **signature**: header+payload 를 **secret 으로 서명**한 값
+JWT 의 안전은 거의 전부 **secret(서명 키) 관리**에 달려 있다. 아래 4가지 중 **1단계는 #1**, **이 2단계는 #3·#4** 를 다룬다.
 
-**핵심 2가지**
-1. **서명 ≠ 암호화**: payload 는 **암호화가 아니라 base64 인코딩**일 뿐이다. 누구나 디코딩해 내용을 볼 수 있다. → **민감정보를 넣지 말 것.**
-2. **secret 이 곧 신뢰의 뿌리**: 서버는 "이 토큰이 우리 secret 으로 서명됐는가"만 본다. **secret 이 유출되면 누구나 유효한 토큰(관리자 포함)을 위조**할 수 있다.
-
-> 이 앱은 대칭키 **HS256**(발급·검증이 같은 secret)을 쓴다. 그래서 secret 유출 = 위조 가능.
-
----
-
-## 2. 이 앱의 JWT 구현 (이미 잘 된 점)
-
-`JwtService` / `JwtAuthenticationFilter`:
-- **HS256 + 32바이트 이상 키**, 만료(`exp`) 검증
-- 검증은 `Jwts.parser().verifyWith(key).parseSignedClaims(token)` → **서명 불일치·`alg:none`·만료 토큰을 거부**
-- 필터는 실패 시 예외를 던지지 않고 **미인증으로 통과**시켜 뒤 단계가 401 응답(fail-safe)
-- **권한(roles)을 토큰이 아니라 DB에서 로드**(`loadUserByUsername`) → 토큰을 위조해도 **role 을 자기 마음대로 넣을 수 없다**
-
-```java
-// 검증 핵심 (JwtService)
-Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
-```
-
-**남은 약점 2가지** → 이 문서에서 다룬다.
-- secret **기본값이 소스에 하드코딩**(리포지토리에 공개) → 유출 시 위조
-- **토큰 무효화(로그아웃·revocation)·Refresh 부재** → 탈취 토큰이 만료까지 유효
-
-### 취약점 → 방어 지도 (요약)
-
-JWT의 안전은 거의 전부 **secret(서명 키) 관리**에 달려 있다. 아래 4가지 중 **이번에 코드를 바꾼 것은 #1 하나**다.
-
-| # | 취약점 | 위험 | 방어 | 이번 작업 |
+| # | 취약점 | 위험 | 방어 | 적용 단계 |
 |---|---|---|---|---|
-| 1 | **secret이 약함/공개**(소스 하드코딩) | 유출 시 **누구나 admin 토큰 위조** | ① secret을 **env로 분리**·강하게 ② 기동 시 **약한 secret 거부(fail-closed)** | ✅ **코드 추가** |
-| 2 | alg:none·서명 변조 | 서명 우회 | `verifyWith()`로 서명 필수 검증 | 기존 코드(변경 없음) |
-| 3 | payload 노출(base64) | **email 등 PII 유출** | 토큰 subject를 **email→uuid**(불투명 식별자)로, 필터는 uuid로 조회 | ✅ **코드 추가** |
-| 4 | 탈취 토큰 장기 유효 | 로그아웃·탈취 후에도 유효 | **짧은 만료 + Refresh**(서버 저장·회전·로그아웃 폐기) | ✅ **2단계 코드** |
+| 1 | secret 약함/공개(소스 하드코딩) | 유출 시 누구나 admin 토큰 위조 | env 분리 + 기동 시 약한 secret 거부(fail-closed) | 1단계 |
+| 2 | `alg:none`·서명 변조 | 서명 우회 | `verifyWith()` 로 서명 필수 검증 | 기존 코드(변경 없음) |
+| 3 | payload 노출(base64) → **email 등 PII 유출** | 탈취 토큰 디코딩만으로 계정 식별자 확보 | 토큰 subject 를 **email→uuid**(불투명)로, 필터는 uuid 로 조회 | **2단계** ✅ |
+| 4 | 탈취 토큰 장기 유효 | 로그아웃·탈취 후에도 만료까지 유효 | **짧은 access + Refresh**(서버 저장·회전·폐기) | **2단계** ✅ |
 
-> HS256은 **같은 secret으로 서명·검증**한다. 그래서 secret 유출 = 위조 가능 → secret 관리가 JWT 보안의 핵심이다.
+> HS256 은 같은 secret 으로 서명·검증한다. secret 유출 = 위조 가능이라는 **1단계의 전제는 2단계에도 그대로 남아 있다.** 2단계가 막는 것은 "secret 을 안다고 해서 아무 계정이나 바로 위조할 수 있는가"라는 **공격 범위**의 문제다 — 아래 2장에서 바로 비교한다.
 
 ---
 
-## 3. 공격 실습 (취약 상태)
+## 2. 공격 실습 — 1단계 공격이 2단계에서 왜 무력화되는가 ⭐
 
-> 취약 상태 = `application.properties` 의 기본 secret + `jwt.allow-insecure-secret=true`
+> 취약 상태 = `application.properties` 의 기본 secret + `jwt.allow-insecure-secret=true` (secret 유출은 1단계와 동일하게 가정)
 
-> ⚠️ **중요 — 이 브랜치는 방어가 누적된다.** HEAD 에는 **4-2(토큰 subject를 uuid로)** 가 이미 적용돼 있다. 그래서 `jwt_forge.py admin@aa.com`(**email** subject)는 현재 코드에서 **401**로 막힌다 — 이것은 버그가 아니라 **4-2 방어가 작동**하는 것이다(= 4-2 표의 "예전 방식 위조 → 401"). 아래 3-1 은 **현재 코드(HEAD) 기준**으로 재현한다. 4-2 적용 *이전*의 email 위조 성공(200)을 그대로 보려면 그 변경 전 커밋에서 실행한다.
+1단계의 공격 전제는 단순했다: **"비밀번호 없이, secret + 대상 이메일만 알면 그 계정의 토큰을 영구히 찍어낼 수 있다."** `admin@aa.com` 처럼 **흔히 쓰이는/추측 가능한 이메일**이면 공격자는 그 계정의 토큰을 단 한 번도 본 적 없이도 위조에 성공했다(1단계 문서 §2 참고 — `sub=admin@aa.com` 위조 → `/me` → **200**).
 
-### 3-1. Secret 유출 → 토큰 위조 → 관리자 탈취 ⭐
-
-`application.properties` 의 secret 은 `secret.getBytes()` 로 쓰이므로, HMAC 키 = **그 문자열의 UTF-8(ASCII) 바이트**다. 이 값만 알면 공격자가 **비밀번호 없이** 유효한 토큰을 직접 서명할 수 있다. 단, HEAD 에서는 subject 가 **uuid** 이므로 **유효한 uuid** 가 필요하다(토큰을 한 번 가로채거나 로그·DB 에서 얻었다고 가정).
+이 2단계 코드(subject=uuid)에 **같은 공격을 그대로** 시도하면:
 
 ```bash
 B=http://localhost:8080
-# (1) admin 토큰을 한 번 확보해 그 안의 uuid(sub) 를 읽는다 (토큰 탈취 가정)
-RT=$(curl -s -X POST "$B/api/userinfos/login" -H "Content-Type: application/json" \
-  -d '{"email":"admin@aa.com","password":"pwd1"}' | python -c "import sys,json;print(json.load(sys.stdin)['accessToken'])")
-UUID=$(echo "$RT" | cut -d. -f2 | python -c "import sys,base64,json;s=sys.stdin.read().strip();s+='='*(-len(s)%4);print(json.loads(base64.urlsafe_b64decode(s))['sub'])")
-echo "admin uuid = $UUID"
-# (2) 알려진 secret + 그 uuid 로 위조 → 비밀번호 없이 admin
-FU=$(python docs/security/jwt_forge.py "$UUID")
-curl -s -w "\n%{http_code}\n" "$B/api/userinfos/me" -H "Authorization: Bearer $FU"
-```
-**검증 결과** (test 프로파일, 검증됨):
-
-| 요청 | 결과 |
-|---|---|
-| 유효 uuid + 알려진 secret 위조 → `/me` | **200** → `{"email":"admin@aa.com","roles":["ROLE_ADMIN",…]}` 🔴 |
-| (참고) `jwt_forge.py admin@aa.com`(email) → `/me` | **401** ✅ (4-2 uuid 방어) |
-
-→ **secret 하나로 유효한 토큰을 찍어낼 수 있다.** uuid 하드닝(4-2) 덕분에 "유효한 uuid" 라는 추가 조건이 붙었지만, **근본 원인은 공개된 secret** 이다. (roles 는 DB에서 오므로, admin 의 uuid 로 위조하면 admin 권한을 그대로 획득)
-
-#### `jwt_forge.py` 는 무엇을 하나 (교육용 위조 스크립트)
-
-외부 라이브러리 없이 **표준 라이브러리만으로** JWT 를 직접 서명(위조)한다. 핵심은 "서버와 똑같은 방식으로 서명 키를 만드는 것"이다.
-
-```python
-# 서버의 jwt.secret 과 동일한 문자열. 서버가 secret.getBytes() 로 키를 만들므로
-# 여기서도 이 "문자열의 UTF-8 바이트" 를 HMAC 키로 쓴다 → 서명이 일치한다.
-SECRET = "5367566B...7437"
-
-def forge(sub, ttl=3600, alg="HS256"):
-    header  = {"alg": alg}                               # 예: {"alg":"HS256"}
-    payload = {"sub": sub, "iat": now, "exp": now+ttl}   # sub 에 원하는 사용자(예: admin@aa.com)
-    signing_input = b64url(header) + "." + b64url(payload)
-    if alg == "none":
-        return signing_input + "."                       # 서명 없는 토큰(alg:none 데모)
-    sig = hmac_sha256(SECRET, signing_input)             # 알려진 secret 으로 서명
-    return signing_input + "." + b64url(sig)             # header.payload.signature
+FT=$(python docs/security/jwt_forge.py admin@aa.com)   # 1단계와 동일한 방식: email 을 sub 에 서명
+curl -s -w "\n%{http_code}\n" "$B/api/userinfos/me" -H "Authorization: Bearer $FT"
 ```
 
-**동작 단계**
-1. `header`·`payload`(JSON)를 각각 **base64url** 로 인코딩해 `.` 으로 잇는다 → `signing_input`
-2. `signing_input` 을 **알려진 secret 으로 HMAC-SHA256 서명** → 세 번째 칸(signature)
-3. `header.payload.signature` 를 출력 → 서버는 같은 secret 으로 검증하므로 **유효한 토큰으로 인정**
+| 단계 | 공격 방식 | 결과 |
+|---|---|---|
+| 1단계 | `sub=admin@aa.com` 위조 → `/me` | **200** ✅ 공격 성공 (email 로 사용자 조회) |
+| 2단계 | **동일한** `sub=admin@aa.com` 위조 → `/me` | **401** ✅ 공격 무력화 (uuid 로 사용자 조회 → 매칭되는 사용자 없음) |
 
-**사용법**
-```bash
-python docs/security/jwt_forge.py                 # 기본: sub=admin@aa.com, alg=HS256
-python docs/security/jwt_forge.py user@aa.com     # 다른 사용자로 위조
-python docs/security/jwt_forge.py admin@aa.com none  # alg:none 토큰(3-2 데모)
-```
-> 핵심 포인트: **위조가 가능한 이유는 secret 이 공개됐기 때문**이다. secret 이 강하고 비공개면 이 스크립트의 서명이 서버 키와 달라 **401** 이 된다(4-1 안전 버전에서 확인). 이 스크립트는 **교육용**이며 이 저장소의 공개 기본 secret 에만 맞춰져 있다.
+→ secret 이 유출된 사실 자체는 2단계에서도 달라지지 않는다(위조 서명 자체는 여전히 유효하다). 하지만 **토큰에 담긴 값이 더 이상 email 이 아니므로**, 서버는 "그런 uuid 를 가진 사용자가 없다"고 판단해 인증을 거부한다. "이메일을 안다"는 공격자의 유일한 무기가 2단계에서는 쓸모없어진 것 — 이것이 1단계 공격이 2단계에서 무력화되는 핵심이다.
 
-### 3-2. alg:none · 서명 변조 → 이미 차단됨
-
-고전적 JWT 공격들을 시도해도 `verifyWith` 가 막는다(검증됨):
-
-| 공격 | 결과 |
-|---|---|
-| `alg:none` (서명 제거) | **401** ✅ |
-| 서명 변조(bad signature) | **401** ✅ |
-| 토큰 없음 | **401** ✅ |
-
-```bash
-python docs/security/jwt_forge.py admin@aa.com none   # alg:none 토큰 → 서버는 401
-```
-> 교훈: jjwt 0.12 의 `verifyWith().parseSignedClaims()` 는 서명을 반드시 검증한다. **직접 base64 만 붙인 토큰은 통하지 않는다.**
-
-### 3-3. payload 는 암호화가 아니다 (base64 노출)
-
-```bash
-echo "$FT" | cut -d. -f2 | python -c "import sys,base64,json;s=sys.stdin.read().strip();s+='='*(-len(s)%4);print(json.loads(base64.urlsafe_b64decode(s)))"
-# {'sub': 'admin@aa.com', 'iat': ..., 'exp': ...}
-```
-→ 토큰만 있으면 **누구나 클레임을 읽는다.** 비밀번호·주민번호·권한근거 등 **민감정보를 payload 에 넣지 말 것.** 이 앱도 원래 subject 에 **email(PII)** 이 들어 있었다 → **4-2 에서 email 대신 불투명 uuid 로 교체**했다.
+> `jwt_forge.py` 자체의 동작 원리(서명 생성 방식)는 1단계 문서 참고.
+> 참고 — `alg:none`·서명 변조·payload base64 노출 같은 공통 공격/개념은 1단계 문서(§3-2, §3-3)에서 이미 다뤘고 이 코드에서도 동일하게 차단된다(변경 없음).
 
 ---
 
-## 4. 방어 (안전 버전)
-
-### 4-1. Secret 외부화 + 기동 시 fail-closed
-
-**이번에 수정한 코드는 여기 하나다.** `JwtService` 생성자가 기동 시 **약한/기본 secret 을 감지**해, 운영에서는 취약 상태로 **아예 기동하지 못하게**(fail-closed) 한다.
-
-**Before — `JwtService` 생성자 (약한 secret도 그대로 사용)**
-```java
-public JwtService(@Value("${jwt.secret}") String secret,
-                  @Value("${jwt.access-expire-seconds}") long accessExpireSeconds) {
-    this.key = Keys.hmacShaKeyFor(secret.getBytes());   // 검증 없이 바로 키 생성
-    this.accessExpireSeconds = accessExpireSeconds;
-}
-```
-
-**After — 약한/기본/짧은 secret 이면 기동 거부**
-```java
-public JwtService(@Value("${jwt.secret}") String secret,
-                  @Value("${jwt.access-expire-seconds}") long accessExpireSeconds,
-                  @Value("${jwt.allow-insecure-secret:false}") boolean allowInsecureSecret) {
-    validateSecret(secret, allowInsecureSecret);        // ★ 추가: 약하면 기동 실패
-    this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-    this.accessExpireSeconds = accessExpireSeconds;
-}
-
-private void validateSecret(String secret, boolean allowInsecureSecret) {
-    boolean weak = secret == null || secret.isBlank()
-            || secret.getBytes(StandardCharsets.UTF_8).length < 32   // HS256 최소 길이(32바이트)
-            || KNOWN_WEAK_SECRETS.contains(secret.trim());           // 알려진 기본/샘플 값(리포지토리 공개값 포함)
-    if (!weak) return;
-    if (!allowInsecureSecret)                                        // 운영: 취약하면
-        throw new IllegalStateException("약한/기본 secret …");        //   아예 못 뜨게(fail-closed)
-    log.warn("약한/기본 secret … 실습 전용으로 계속");                 // 실습: 경고만 남기고 진행
-}
-```
-
-**`application.properties` — 플래그 추가 (Before에는 없던 줄)**
-```properties
-# true  = 실습(취약 데모 허용: 기본 secret으로도 기동)
-# false = 운영(약한/기본 secret이면 기동 거부). 반드시 JWT_SECRET 주입
-jwt.allow-insecure-secret=${JWT_ALLOW_INSECURE_SECRET:true}
-# JWT_SECRET=<충분히 길고 무작위한 값>   (환경변수/시크릿 매니저)
-```
-
-**검증 결과** (검증됨):
-
-| 설정 | 결과 |
-|---|---|
-| `allow-insecure=false` + 기본 secret | **기동 실패** (`IllegalStateException`) ✅ fail-closed |
-| **강한** secret(env) 로 교체 후, 유출된 **기본 secret 위조** 토큰으로 `/me` | **401** ✅ 무력화 |
-| 강한 secret 앱에서 **정상 로그인 토큰**으로 `/me` | **200** ✅ |
-
-> 즉 secret 을 강하게 두고 env 로 관리하면, 리포지토리에 남은 기본 secret 이 유출돼도 **위조가 통하지 않는다.**
-
-### 4-2. 토큰 subject 를 uuid 로 (payload 최소화 — PII 제거)
+## 3. 방어 ① — 토큰 subject 를 email → uuid 로 (PII 제거 + 공격 범위 축소)
 
 > **PII(Personally Identifiable Information, 개인 식별 정보)란?** 특정 개인을 **직접**(이름·주민번호·email·전화번호) 또는 **간접**(생년월일·주소·IP)으로 알아볼 수 있는 정보. **JWT payload 는 암호화가 아니라 base64** 라 누구나 읽을 수 있으므로, 토큰·로그·URL 처럼 노출되기 쉬운 곳에는 **PII 를 넣지 않는 것**이 원칙이다.
 
-payload 는 공개(base64)이므로 **email 같은 PII 를 넣지 않는다.** 로그인에 쓰는 email 대신 **의미 없는 불투명 식별자(`UserInfo.uuid`)** 를 토큰 subject 로 담고, 필터는 그 uuid 로 사용자를 조회한다.
+payload 는 공개(base64)이므로 **email 같은 PII 를 넣지 않는다.** 로그인에 쓰는 email 대신 **의미 없는 불투명 식별자(`UserInfo.uuid`)** 를 토큰 subject 로 담고, 필터는 그 uuid 로 사용자를 조회한다. 이 변경의 보안 효과는 **PII 비노출**뿐 아니라, 바로 앞 §2 에서 본 것처럼 **"이메일만 알면 위조 가능"이라는 공격 경로를 끊는 것**이다 — uuid 는 어떤 API 응답으로도 클라이언트에 반환되지 않기 때문에, 공격자 입장에서는 "짐작"도 "조회"도 불가능한 값이 된다.
 
 #### 수정 요약 — 한눈에 보기 (7곳)
 
@@ -213,6 +68,8 @@ payload 는 공개(base64)이므로 **email 같은 PII 를 넣지 않는다.** �
 | `JwtService` | 수정 | `generateToken(uuid)`, `extractUsername`→`extractSubject`, `validateToken(token, uuid)` |
 | `JwtAuthenticationFilter` | 수정 | email 조회 → **uuid 조회**로 변경 |
 | `UserInfoController` | 수정 | 로그인 성공 시 토큰 subject = **uuid** |
+
+> **`@PrePersist` 란?** JPA(Java Persistence API)의 엔티티 생명주기 콜백 애노테이션으로, 해당 엔티티가 DB 에 **처음 저장(INSERT)되기 직전**에 자동 호출된다. `UserInfo` 에 이 콜백으로 uuid 를 채워 넣으면, 회원가입 API 를 통해서든 초기 시드 데이터를 통해서든 — **생성 경로와 무관하게** — 저장되는 모든 사용자 레코드가 빠짐없이 고유 uuid 를 갖게 된다.
 
 #### 핵심 로직 Before → After
 > 엔티티·레포·서비스는 **새로 추가된 코드**라 Before 가 없다. 동작이 바뀐 핵심은 아래 2곳이다.
@@ -240,35 +97,67 @@ UserInfoUserDetails ud = userDetailsService.loadUserByUuid(uuid);    // uuid 로
 |---|---|
 | 로그인 토큰의 payload | `{"sub":"<uuid>","iat":..,"exp":..}` → **email 없음** ✅ |
 | 정상 토큰으로 `/me` | **200** ✅ (uuid 조회로 정상 인증) |
-| 예전 방식 위조(subject=email, secret 서명) | **401** ✅ (uuid 아님 → 사용자 없음) |
+| 1단계 방식 위조(subject=email, secret 서명) | **401** ✅ (uuid 아님 → 사용자 없음) |
+| 탈취 경험 없는 계정의 uuid 를 추측해 위조 | (추측 불가능하므로 시도 자체가 무의미) |
 | 랜덤 uuid 위조(secret 서명) | **401** ✅ (그런 사용자 없음) |
 
-**부가 효과**
-- 토큰에 **PII(email)가 남지 않는다** → 토큰이 노출돼도 로그인 식별자가 드러나지 않음
-- email 을 바꿔도 토큰에 영향 없음(식별자 분리)
-- 방어 심화: secret 이 유출돼도 **유효한 uuid 를 알아야** 위조가 통한다(uuid 는 응답으로 노출하지 않음)
+> 주의: 이는 **payload 최소화**이지 암호화가 아니다. uuid 역시 base64 로 보이므로, 민감정보는 여전히 넣지 않는다. 그리고 uuid 화는 **secret 유출 자체를 막지는 못한다** — "유출된 secret 으로 임의 계정을 위조"하는 **공격 범위**를 좁히는 방어이지, secret 하드닝(1단계)을 대체하지 않는다.
 
-> 주의: 이는 **payload 최소화**이지 암호화가 아니다. uuid 역시 base64 로 보이므로, 민감정보는 여전히 넣지 않는다.
+---
 
-### 4-3. Secret 관리 원칙
-- 소스·`application.properties` 에 **실제 secret 을 두지 않는다**(env/시크릿 매니저)
-- **충분히 길고 무작위**(HS256 ≥ 32바이트, 권장 더 길게), 서비스별로 다르게
-- **주기적 로테이션** + 유출 시 즉시 교체(교체하면 기존 토큰 전부 무효)
+## 4. 방어 ② — Refresh 토큰 (서버 저장 + 회전) 🆕 2단계 핵심 구현
 
-### 4-4. 토큰 무효화 → Refresh 토큰 (서버 저장 + 회전) 🆕 2단계 구현
+### 4-1. 문제: JWT 는 stateless 라 "끌 수" 없다
 
-**문제**: JWT access 토큰은 **stateless** 라 서버가 기억하지 않는다. 그래서 탈취/로그아웃된 토큰을 **만료 전에 무효화하기 어렵다.** 1단계는 로그아웃 = 클라이언트가 토큰을 버리는 것뿐이라, 탈취 토큰이 만료까지 유효했다.
+JWT access 토큰은 서버가 상태를 기억하지 않는 **stateless** 방식이다. 서명만 맞으면 만료 전까지 항상 유효하다고 판단하므로, 다음 상황에서 **서버가 손을 쓸 방법이 없었다(1단계)**:
+- 사용자가 **로그아웃**해도, 그 토큰은 만료 시각까지 여전히 유효하다(클라이언트가 버렸을 뿐).
+- 토큰이 **탈취**되어도, 만료 전까지는 공격자도 정상 사용자처럼 인증된다.
+- 비밀번호를 바꾸거나 계정에 이상이 감지돼도, 이미 발급된 토큰을 **강제로 무효화할 수 없다.**
 
-**해결(2단계)**: access 는 **짧게** 두고, 만료되면 **Refresh 토큰**으로 새 access 를 받는다. Refresh 는 **JWT 가 아니라 무작위 불투명 문자열**이며 **서버 DB 에 저장**한다 → 서버가 들고 있으므로 **로그아웃·유출 시 폐기**할 수 있고, 갱신 때마다 **교체(회전)** 한다.
+1단계는 이 문제를 "access 만료를 60분으로 유지"하는 선에서 남겨뒀다 — 탈취되면 최대 60분간 무방비다.
 
-**설계**
-- access 만료 짧게(운영 권장 5~15분) / refresh 길게(예: 14일, `jwt.refresh-expire-seconds`)
-- **이 앱의 실제 설정**: refresh 가 생긴 2단계는 access 를 **900초(15분)** 로 단축(1단계는 refresh 가 없어 **3600초(60분)** 유지) — access 를 짧게 둘 수 있는 것 자체가 refresh 도입의 효과
-- 로그인 응답 = `accessToken` + `refreshToken`
-- `POST /api/userinfos/refresh` : refresh 제출 → **새 access + 새 refresh**(기존 refresh 는 1회용으로 폐기 = 회전)
-- `POST /api/userinfos/logout` : refresh 를 서버에서 **폐기**
+### 4-2. 해결: access 는 짧게, Refresh 로 갱신 + 서버가 통제
 
-**추가/변경 코드(한눈에)**
+- **access**: 평소 API 호출마다 쓰는 단기 JWT. **900초(15분)** 로 단축.
+- **refresh**: access 가 만료됐을 때 새 access 를 받기 위한 자격. **JWT 가 아니라 서버 DB 에 저장한 무작위 불투명 문자열**이다 → 서버가 "들고" 있으므로 **조회·폐기·교체**가 가능해진다. 이것이 stateless 한 access 토큰에는 없던 **상태(state)를 서버 쪽에 되살리는 지점**이다.
+
+**동작 흐름**
+1. 로그인 → `accessToken`(15분) + `refreshToken`(DB 저장) 함께 발급
+2. access 로 평소처럼 API 호출
+3. access 만료(15분 경과) → 클라이언트가 `POST /api/userinfos/refresh` 에 refresh 제출
+4. 서버가 DB 에서 refresh 유효성 확인 → **새 access + 새 refresh** 발급, **기존 refresh 는 즉시 폐기**(1회용 **회전**)
+5. 사용자가 로그아웃 → `POST /api/userinfos/logout` → 서버가 **해당 refresh 를 DB 에서 삭제**(그 순간부터 재사용 불가)
+
+```java
+// 회전(RefreshTokenService.rotate): 유효하면 폐기 후 새 토큰 발급
+RefreshToken rt = repository.findByToken(presented)
+        .orElseThrow(() -> new BadCredentialsException("유효하지 않은 refresh"));
+if (rt.getExpiresAt().isBefore(Instant.now())) { repository.delete(rt); throw ...만료; }
+repository.delete(rt);          // 1회용 → 즉시 폐기
+return issue(rt.getUserUuid()); // 새 refresh 발급(회전)
+```
+
+> **참고 — refresh 토큰 수명은 보통 얼마로 두나?** 일반적인 웹 서비스는 **1~4주**(이 앱은 **14일**, `jwt.refresh-expire-seconds`) 정도를 많이 쓰고, 금융 등 고보안 서비스는 **몇 시간~며칠**로 더 짧게, 모바일 앱은 **30~90일** 이상으로 더 길게 두기도 한다. 다만 이 앱의 `rotate()`는 갱신할 때마다 `issue()`를 다시 호출해 만료 시각을 **"지금부터 14일"로 매번 리셋**한다 — 즉 고정 만료가 아니라 **활동 기반(sliding) 만료**다. 사용자가 14일 안에 한 번이라도 쓰면 세션은 사실상 끊기지 않고 계속 연장된다(탈취된 토큰도 공격자가 계속 쓰면 마찬가지로 연장되지만, 회전+재사용 탐지가 이를 어느 정도 상쇄한다). 더 엄격하게 제한하려면 활동과 무관하게 N일 후 무조건 재로그인시키는 **절대 만료**를 sliding 위에 추가로 둘 수 있다(이 앱에는 없음).
+
+### 4-3. 이 구조로 얻는 것 — 구체적 이점
+
+| 이점 | 설명 |
+|---|---|
+| **탈취 피해 시간 최소화** | access 가 15분짜리라 탈취돼도 **최대 15분**이면 자동으로 무력화된다(1단계는 60분간 무방비). access 를 이렇게 짧게 잡을 수 있는 것 자체가 Refresh 도입의 효과다 — Refresh 없이 access 만 15분이면 사용자가 15분마다 재로그인해야 한다. |
+| **로그아웃이 실제로 "끄는" 동작이 된다** | stateless JWT 는 로그아웃해도 토큰이 만료까지 살아있었다(1단계). Refresh 는 서버 DB 에 있으므로 로그아웃 시 **즉시 삭제** → 그 세션은 더 이상 갱신될 수 없다(남은 access 수명만큼만 유효, 최대 15분). |
+| **탈취·재사용 탐지의 기반(회전)** | refresh 는 **1회용**이라 쓰는 즉시 폐기되고 새 값으로 교체된다. 만약 공격자가 탈취한 **옛 refresh** 로 갱신을 시도하면 이미 폐기된 값이라 **401**이 난다 — 이 "이미 쓴 토큰이 또 온다"는 신호는 운영에서 **도난 탐지 트리거**로 쓸 수 있다(예: 해당 사용자의 모든 세션 강제 로그아웃). |
+| **사용자 경험은 그대로, 보안만 강화** | access 가 짧아져도 Refresh 가 자동으로 갱신해주므로 **사용자는 체감상 로그인 상태가 유지**된다 — "보안 강화 = 불편해진다"는 트레이드오프를 Refresh 가 흡수한다. |
+| **향후 세션·기기 관리의 토대** | 서버가 refresh 를 DB 로 들고 있으므로, 이후 "내 모든 기기에서 로그아웃", "의심 기기 강제 로그아웃", "활성 세션 목록 조회" 같은 기능을 **이 테이블 위에 그대로 확장**할 수 있다(이번 2단계 범위에는 없음).
+
+**탈취 시나리오로 보는 Before/After**
+
+| | 1단계 (Refresh 없음) | 2단계 (access 15분 + Refresh) |
+|---|---|---|
+| 토큰 탈취 후 공격자가 쓸 수 있는 시간 | **최대 60분**(만료까지), 로그아웃해도 무효화 불가 | **최대 15분**(access 만료까지) |
+| 사용자가 로그아웃하면? | 탈취된 토큰은 여전히 유효(서버가 모름) | 로그아웃 시 refresh 폐기 → 다음 갱신부터 전면 차단 |
+| 탈취된 토큰이 재사용되면? | 서버는 구분할 방법이 없음 | 폐기된 refresh 재사용 시 **401** → 이상 신호로 탐지 가능 |
+
+### 4-4. 추가/변경 코드 (한눈에)
 
 | 파일 | 구분 | 한 일 |
 |---|---|---|
@@ -280,64 +169,96 @@ UserInfoUserDetails ud = userDetailsService.loadUserByUuid(uuid);    // uuid 로
 | `SecurityConfig` | 수정 | `/refresh`·`/logout` permitAll |
 | `application.properties` | 수정 | `jwt.refresh-expire-seconds` |
 
-```java
-// 회전(RefreshTokenService.rotate): 유효하면 폐기 후 새 토큰 발급
-RefreshToken rt = repository.findByToken(presented)
-        .orElseThrow(() -> new BadCredentialsException("유효하지 않은 refresh"));
-if (rt.getExpiresAt().isBefore(Instant.now())) { repository.delete(rt); throw ...만료; }
-repository.delete(rt);          // 1회용 → 즉시 폐기
-return issue(rt.getUserUuid()); // 새 refresh 발급(회전)
-```
-
 **검증 결과** (test 프로파일, 검증됨):
 
 | 단계 | 결과 |
 |---|---|
 | 로그인 | `accessToken`(JWT) + `refreshToken`(불투명 64자) 발급 ✅ |
 | `POST /refresh`(유효 refresh) | 새 access + **새 refresh**(회전, 값 바뀜) ✅ |
-| 예전 refresh 재사용 | **401** ✅ (1회용 → 폐기됨) |
+| 예전 refresh 재사용 | **401** ✅ (1회용 → 폐기됨, 재사용 탐지 신호) |
 | `POST /logout` 후 그 refresh 로 `/refresh` | **401** ✅ (서버에서 폐기) |
 
-> 트레이드오프: refresh 서버 저장은 상태를 다시 두는 것이라 JWT 의 stateless 장점을 일부 포기한다. 대신 **무효화(로그아웃·회전·탈취 대응)** 를 얻는다. 운영 보강: refresh **원문 대신 해시 저장**, 재사용 탐지 시 **해당 사용자 전체 refresh 폐기**.
+### 4-5. 한계와 운영 보강 포인트
+
+refresh 서버 저장은 **JWT 의 stateless 장점을 일부 포기**하는 트레이드오프다(DB 조회가 늘어남). 대신 **무효화(로그아웃·회전·탈취 대응)** 라는, stateless 만으로는 불가능했던 능력을 얻는다. 운영 환경에서는 추가로:
+- refresh **원문 대신 해시**를 DB 에 저장(DB 유출 시에도 바로 재사용 불가)
+- **재사용 탐지 시 해당 사용자의 모든 refresh 를 일괄 폐기**(§4-3 표의 탐지를 실제 대응으로 연결)
+- refresh 발급 기기/IP 를 함께 기록해 이상 패턴 모니터링에 활용
+- (보안과 무관한 운영 팁) `expiresAt`(`Instant`, UTC)을 DB 에서 직접 조회하면 로컬 시각보다 이르게 보일 수 있다 — `spring.jpa.properties.hibernate.jdbc.time_zone=Asia/Seoul` 로 KST 기준 표기되도록 맞춰둔다(`application-prod.properties`)
+
+### 4-6. API 요청 한눈에 보기
+
+Refresh 토큰 적용 후 실제 인증 흐름에서 호출하는 API 요청을 정리하면 다음과 같다. (Base URL: `http://localhost:8080`)
+
+**① 로그인 — `POST /api/userinfos/login`**
+```
+POST http://localhost:8080/api/userinfos/login
+Content-Type: application/json
+
+{
+  "email": "admin@aa.com",
+  "password": "pwd1"
+}
+```
+→ 응답: `accessToken`, `refreshToken`, `tokenType`("Bearer"), `expiresIn`(초), `email`, `name`, `roles`
+
+**② 토큰 갱신 — `POST /api/userinfos/refresh`**
+```
+POST http://localhost:8080/api/userinfos/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "<로그인 응답으로 받은 refreshToken>"
+}
+```
+→ 응답: 새 `accessToken` + 새 `refreshToken`(1회용 **회전**, 값이 바뀜)
+
+**③ 로그아웃 — `POST /api/userinfos/logout`**
+```
+POST http://localhost:8080/api/userinfos/logout
+Content-Type: application/json
+
+{
+  "refreshToken": "<폐기할 refreshToken>"
+}
+```
+→ 응답: **204 No Content** (서버가 해당 refresh 를 DB 에서 삭제)
+
+**참고) 인증이 필요한 일반 API 호출 — `GET /api/userinfos/me`**
+```
+GET http://localhost:8080/api/userinfos/me
+Authorization: Bearer <accessToken>
+```
+→ JSON 본문 없이, accessToken 만 `Authorization` 헤더에 담아 호출한다.
 
 ---
 
 ## 5. 방어 정리
 
-| 위험 | 방어 |
-|---|---|
-| secret 유출 → 위조 | 강한 secret **env 관리**, 소스에 두지 않기, 기동 시 **약한 secret 거부(fail-closed)**, 로테이션 |
-| `alg:none`·서명 변조 | `verifyWith()` 로 **서명 필수 검증**(이미 적용) |
-| payload 노출 | **민감정보 미포함**(서명일 뿐 암호화 아님). subject 를 email→**uuid**(불투명)로 교체 |
-| 탈취 토큰 장기 유효 | **짧은 access + Refresh(서버 저장·회전·로그아웃 폐기)** — 2단계 구현 |
-| 전송 중 탈취 | **HTTPS/TLS** 필수(평문 금지) |
+| 위험 | 방어 | 단계 |
+|---|---|---|
+| secret 유출 → 위조 | 강한 secret env 관리, 소스에 두지 않기, 기동 시 약한 secret 거부(fail-closed), 로테이션 | 1단계 |
+| `alg:none`·서명 변조 | `verifyWith()` 로 서명 필수 검증(이미 적용) | 기존 |
+| payload 노출 → 공격 범위 확대 | subject 를 email→**uuid**(불투명)로 교체 → "이메일만 알면 위조" 경로 차단 | **2단계** |
+| 탈취 토큰 장기 유효·로그아웃 무력화 | **짧은 access(15분) + Refresh**(서버 저장·회전·로그아웃 폐기) | **2단계** |
+| 전송 중 탈취 | **HTTPS/TLS** 필수(평문 금지) | 공통 |
 
 ---
 
 ## 6. 자주 묻는 질문 (FAQ)
 
-**Q1. `alg:none` 은 "알고리즘을 쓰지 않는다"는 뜻인가요?**
-네 — **서명이 없는 토큰**이다. 과거 일부 라이브러리가 헤더의 `alg` 를 그대로 믿어, `alg` 를 `none` 으로 바꾸고 서명을 지운 토큰을 검증 없이 통과시켰다(인증 우회). 이 앱은 `verifyWith(key)` 로 서명을 반드시 요구하므로 `alg:none`·서명 변조를 거부한다(401). `alg` 는 공격자가 바꿀 수 있는 값이므로 믿지 말고, **서버가 기대하는 키·알고리즘으로만 검증**한다.
+> secret 외부화, fail-closed, 약한 secret 의 기준, git 노출 등 **1단계 공통 FAQ(Q1~Q4, Q7)는 1단계 문서 참고**. 아래는 2단계(uuid·Refresh)에 특화된 질문만 다룬다.
 
-**Q2. 설정파일의 `jwt.secret` 이 git 에 올라가 있으면 괜찮은가요?**
-원칙상 **문제**다. secret 이 저장소에 있으면(특히 public) 누구나 관리자 토큰을 위조할 수 있다. 다만 이 앱 값은 **env override 를 전제로 한 데모용 기본값**이고 보호할 실데이터가 없어 **실습에서만** 허용한다. 운영이면 치명적 취약점. 한 번 커밋한 secret 은 **git history 에 영구히 남으므로**, 파일에서 지우는 것만으론 부족하고 반드시 **새 값으로 교체(로테이션)** 해야 한다.
+**Q1. PII 가 무엇인가요?**
+**개인 식별 정보(Personally Identifiable Information)** — 이름·주민번호·email·전화번호처럼 개인을 알아볼 수 있는 정보다. JWT payload 는 암호화가 아니라 base64 라 누구나 읽으므로 **PII 를 넣지 않는다.** 그래서 이 앱은 토큰 subject 를 **email → uuid**(불투명 식별자)로 바꿨다(§3 참고).
 
-**Q3. `jwt.allow-insecure-secret=false` 는 무슨 뜻인가요?**
-약한/기본 secret 이면 **앱 기동을 거부(fail-closed)** 한다는 뜻이다. 단 `false` 만으론 부족하고, **강한 `JWT_SECRET` 을 환경변수로 주입**하는 것과 **쌍으로** 설정해야 실제로 안전하다. (false 로 두고 강한 secret 을 안 주면 기본값이 약해 기동이 실패한다 — 의도된 안전 동작.)
-
-**Q4. 약한/강한 secret 은 byte 수(길이)를 말하나요?**
-길이는 **최소 조건**일 뿐이다(HS256 ≥ 32byte = 256bit). **강함 = 길이 + 무작위(엔트로피) + 비밀 유지**, 셋 다 필요하다. 길어도 예측 가능하거나 **공개되면 약하다** — 이 앱의 64byte 기본값이 "길지만 공개되어 약한" 예다. 강한 secret 은 무작위로 생성한다(예: `openssl rand -base64 48`).
-
-**Q5. PII 가 무엇인가요?**
-**개인 식별 정보(Personally Identifiable Information)** — 이름·주민번호·email·전화번호처럼 개인을 알아볼 수 있는 정보다. JWT payload 는 암호화가 아니라 base64 라 누구나 읽으므로 **PII 를 넣지 않는다.** 그래서 이 앱은 토큰 subject 를 **email → uuid**(불투명 식별자)로 바꿨다(4-2 참고).
-
-**Q6. access 와 refresh 토큰의 차이는?**
+**Q2. access 와 refresh 토큰의 차이는?**
 **access** 는 API 호출마다 `Authorization` 헤더로 보내는 **단기 JWT**(권한 증표)다. 자주 노출되므로 **짧게** 둔다. **refresh** 는 access 가 만료됐을 때 **새 access 를 받기 위한 장기 자격**으로, 평소엔 보관만 하고 `/refresh` 호출 때만 쓴다. 이 앱의 refresh 는 **JWT 가 아니라 서버 DB 에 저장한 무작위 값**이라 **폐기(로그아웃)·회전**이 가능하다. 요약: **access=짧고 자주, refresh=길고 가끔·서버가 통제**.
 
 ---
 
 ## 7. 관련 문서
-- **이전 단계**: `feature/jwt-security-demo` (**1단계** — secret 하드닝, email subject라 공격 성공 시연)
+- **이전 단계**: `feature/jwt-security-demo` (**1단계** — secret 하드닝, email subject라 공격 성공 시연, JWT 개념·`alg:none`·fail-closed FAQ 포함)
 - 개념: `OWASP_Top10_2025_한글요약` (#7 인증, #4 암호화 하드닝 체크리스트)
 - 접근 제어: `02_Insecure_DOR` (인증 ≠ 인가 — 위조로 인증돼도 인가는 별개)
 - 프론트: 토큰 저장 위치(sessionStorage/localStorage)와 XSS 연계는 프론트 보안편에서 다룸
