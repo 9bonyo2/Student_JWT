@@ -17,10 +17,24 @@ public class UserController {
     @Autowired
     private UserRepository userRepository;
 
+    //[안전 ✅][XSS 하드닝] index.html 은 th:text(자동 이스케이프)로 렌더링한다.
+    //  - 이름에 <script> 등을 넣어도 문자열 그대로 화면에 표시될 뿐 실행되지 않는다.
     @GetMapping("/index")
     public String index(Model model) {
         model.addAttribute("users", userRepository.findAll());
         return "index";
+    }
+
+    //[취약 ⚠️ - Stored XSS 공격 재현 실습 전용]
+    //  같은 데이터(users)를 index-vuln.html 로 내려주는데, 그 템플릿은 이름을 th:utext(이스케이프 없음)로 렌더링한다.
+    //  - 회원가입(이름 필드)에 <script>...</script> 를 넣고 저장하면,
+    //    이 목록 페이지를 "보는 모든 사용자(관리자 포함)" 의 브라우저에서 그 스크립트가 그대로 실행된다.
+    //  - 실무에서는 절대 두면 안 되는 안티패턴이다. 오직 공격 재현 실습을 위해 남긴다.
+    //  - 방어 : 이 핸들러/템플릿을 제거하고 위의 안전한 /index(th:text) 만 쓰면 재현이 불가능해진다.
+    @GetMapping("/index-vuln")
+    public String indexVulnerable(Model model) {
+        model.addAttribute("users", userRepository.findAll());
+        return "index-vuln";
     }
 
     @GetMapping("/signup")

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout" layout:decorate="layout/default_layout">
+<meta charset="UTF-8">
+<th:block layout:fragment="content">
+    <div class="container mt-5">
+        <!-- [교육용] 이 페이지는 Stored XSS 재현 전용이다. 운영에는 절대 배포하지 않는다. -->
+        <div class="alert alert-danger" role="alert">
+            ⚠️ XSS 취약 데모 페이지 — 아래 Name 컬럼은 <code>th:utext</code>(이스케이프 없음)로 렌더링된다.
+            <a th:href="@{/users/signup}">회원가입</a>에서 이름에 <code>&lt;script&gt;alert(document.domain)&lt;/script&gt;</code>
+            같은 값을 넣고 다시 이 페이지를 열어보면 실행된다.
+        </div>
+
+        <h2>User List (취약 ⚠️)</h2>
+        <table class="table table-striped">
+            <thead>
+            <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Email</th>
+                <th scope="col">Edit</th>
+                <th scope="col">Delete</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="user : ${users}">
+                <!-- [취약 ⚠️] th:utext : 이름을 이스케이프 없이 그대로 HTML 로 삽입한다 -->
+                <td th:utext="${user.name}"></td>
+                <td th:text="${user.email}"></td>
+                <td><a th:href="@{/users/edit/{id}(id=${user.id})}" class="btn btn-sm btn-outline-primary">Edit</a></td>
+                <td>
+                    <form th:action="@{/users/delete/{id}(id=${user.id})}" method="post" style="display:inline"
+                          onsubmit="return confirm('Are you sure you want to delete this user?')">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+        <div class="mt-5">
+            <a href="/users/signup" class="btn btn-primary">Register</a>
+            <a href="/users/index" class="btn btn-outline-secondary">안전한 목록으로</a>
+        </div>
+    </div>
+</th:block>
+</html>

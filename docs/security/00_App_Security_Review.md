@@ -3,7 +3,7 @@
 > 대상: Student_JWT (Spring Boot 3.4.5 / Thymeleaf 세션 + REST JWT)
 > 목적: 강의용 취약점 데모 대상 식별·우선순위화 및 진행 관리
 > 점검일: 2026-09-29 · 갱신일: 2026-10-02
-> **이 브랜치(`feature/jwt-advanced-demo`) 기준 진행 상태**로 표기한다(완료 ✅ / 예정 ⏳).
+> **이 브랜치(`feature/xss-demo`) 기준 진행 상태**로 표기한다(완료 ✅ / 예정 ⏳).
 
 각 항목은 **OWASP Top 10 2025** 카테고리와 매핑하며, 주제별로 **취약/안전 코드 + 실습 문서(md·docx)**로 다룬다. 개념 요약은 `OWASP_Top10_2025_한글요약`(md·docx) 참고.
 
@@ -56,13 +56,18 @@
 ### 7. 약한 비밀번호 & 소스 노출 — OWASP #7
 - 시드 계정 비밀번호 `pwd1`/`pwd2`가 `UserInfoInsertRunner`에 평문 하드코딩, 비밀번호 정책 없음 (저장은 BCrypt 해시).
 
+### 8. XSS (Stored) — OWASP #5(인젝션) ✅ 완료
+- **근거**: 안전한 `index.html`(`th:text`, 자동 이스케이프)은 원래부터 있었지만, 그 반례(취약 버전)가 없어 "왜 안전한지"를 실제로 보여줄 수 없었다.
+- **영향**: `User.name`에 길이·특수문자 제한이 없어 `<script>...</script>` 저장이 가능. 세션 쿠키는 `HttpOnly`라 고전적 탈취는 막히지만, 같은 출처에서 실행되는 스크립트는 피해자 권한으로 즉시 행동(및 CSRF 토큰 탈취)할 수 있다.
+- **조치**: CSRF 데모와 동일한 패턴으로 **안전(`/users/index`, `th:text`) · 취약(`/users/index-vuln`, `th:utext`) 핸들러를 나란히** 둬서, 같은 데이터가 렌더링 방식에 따라 이스케이프되는지 실측 비교(검증됨).
+- **브랜치/문서**: `feature/xss-demo` · `07_XSS.md/.docx`
+
 ---
 
 ## 🟢 LOW / 확인·양호
 
 - **`/api/users` 경로 중복** — `UserRestController`·`UserServiceController` 모두 `/api/users` → 혼란·유지보수 위험, 정리 권장.
 - **CORS** — `allowCredentials=true` + `allowedHeaders="*"` → 운영 시 범위 축소 권장 (origin은 명시되어 양호).
-- **XSS** — 현재 템플릿에 `th:utext` 없음 → 양호(데모하려면 별도 추가 필요).
 - **`/api/vuln/**` permitAll** — SQLi 교육용(의도됨), 운영 배포 금지.
 
 ---
@@ -83,8 +88,9 @@
 | CSRF (+GET 삭제) | #1 | `feature/csrf-demo` | `05_CSRF` | ✅ 완료 |
 | JWT 보안 (1단계: secret 하드닝) | #7, #4 | `feature/jwt-security-demo` | `06_JWT_Security` | ✅ 완료 |
 | JWT 보안 (2단계: uuid + Refresh) | #7, #4 | `feature/jwt-advanced-demo` | `06_JWT_Security` | ✅ 완료 |
+| XSS (Stored) | #5 | `feature/xss-demo` | `07_XSS` | ✅ 완료 |
 | 공급망/SBOM(개념) | #3 | — | `03_Supply_Chain_SBOM` | ✅ 문서 |
 | OWASP Top 10 2025 요약 | 전체 | — | `OWASP_Top10_2025_한글요약` | ✅ 문서 |
 | Mass Assignment / 민감정보 노출 | #6 | (예정) | — | ⏳ 예정 |
 
-> 취약점은 브랜치별로 누적되며(`sqli-demo → access-control-demo → logging-hardening → csrf-demo → jwt-security-demo → jwt-advanced-demo`), 각 브랜치의 이 문서는 그 시점까지의 완료 상태만 표시한다. `jwt-advanced-demo`는 `jwt-security-demo`(1단계)에서 분기한 2단계로, 같은 JWT 주제의 심화 단계다. 모든 취약점 정리 후 `main`에 최종 병합 예정.
+> 취약점은 브랜치별로 누적되며(`sqli-demo → access-control-demo → logging-hardening → csrf-demo → jwt-security-demo → jwt-advanced-demo → xss-demo`), 각 브랜치의 이 문서는 그 시점까지의 완료 상태만 표시한다. `jwt-advanced-demo`는 `jwt-security-demo`(1단계)에서 분기한 2단계로, 같은 JWT 주제의 심화 단계다. `xss-demo`는 `jwt-advanced-demo`에서 분기했다. 모든 취약점 정리 후 `main`에 최종 병합 예정.
