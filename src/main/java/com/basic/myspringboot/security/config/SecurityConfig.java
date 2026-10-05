@@ -93,6 +93,11 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers("/login/**").permitAll()
                             .requestMatchers("/users/**").authenticated()
+                            //[보안 설정 오류 하드닝] (OWASP #2) Actuator는 노출 범위(exposure.include)를
+                            //최소화해도, 혹시 나중에 다시 넓어질 경우를 대비해 인증을 한 겹 더 요구한다.
+                            //헬스체크는 로드밸런서 등 외부 도구가 인증 없이 호출해야 하므로 예외로 둔다.
+                            .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                            .requestMatchers("/actuator/**").hasAuthority("ROLE_ADMIN")
                             //로그인 페이지·정적 리소스·루트 등 나머지는 접근 허용
                             .anyRequest().permitAll();
                 })
