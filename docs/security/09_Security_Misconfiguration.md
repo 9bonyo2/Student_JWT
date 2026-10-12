@@ -1,6 +1,6 @@
 # 09. 보안 설정 오류 (Security Misconfiguration) 실습
 
-> OWASP Top 10 2025 **#2 보안 설정 오류**(Security Misconfiguration) — 2021년 #5에서 #2로 순위가 올라간 항목(`OWASP_Top10_2025_한글요약` 참고)
+> OWASP Top 10 2025 **#2 보안 설정 오류**(Security Misconfiguration) — 2021년 #5에서 #2로 순위가 올라간 항목
 > 브랜치: `feature/security-misconfig-demo` (`feature/deserialization-demo`에서 분기)
 > 대상 코드: `application.properties`(Actuator 설정) + `SecurityConfig.java`
 
@@ -175,6 +175,6 @@ Actuator가 제공하는 기능을 전부 켜 둘 필요는 없다. **로드밸�
 ---
 
 ## 6. 관련 문서
-- 개념: `OWASP_Top10_2025_한글요약` (#2 보안 설정 오류 — 2021년 #5에서 #2로 순위 상승)
+- OWASP Top 10 2025 #2 보안 설정 오류 — 2021년 #5에서 #2로 순위 상승
 - 전체 진행: `00_App_Security_Review.md`
 - 실무 팁: 이 데모의 `jwt.secret`/`voucher.hmac-secret` 자동 마스킹 여부는 `06_JWT_Security.md`, `08_Insecure_Deserialization.md`에서 다룬 비밀키들과 같은 값이다 — "비밀키 자체를 안전하게 관리"하는 것과 "그 값을 보여주는 창구(Actuator)를 잠그는 것"은 서로 다른, 둘 다 필요한 방어다.
