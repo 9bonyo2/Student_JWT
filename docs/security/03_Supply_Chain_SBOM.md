@@ -1,7 +1,6 @@
 # 03. 소프트웨어 공급망 보안 실습 — CVE · SBOM
 
 > OWASP Top 10 2025 **#3 소프트웨어 공급망 실패(Software Supply Chain Failures)**
-> 관련 문서: `OWASP_Top10_2025_한글요약`
 > 실습 환경: Student_JWT (Maven / Spring Boot 3.4.5)
 
 ---
