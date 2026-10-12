@@ -5,7 +5,7 @@
 > 점검일: 2026-09-29 · 갱신일: 2026-09-30
 > **이 브랜치(`feature/jwt-security-demo`) 기준 진행 상태**로 표기한다(완료 ✅ / 예정 ⏳).
 
-각 항목은 **OWASP Top 10 2025** 카테고리와 매핑하며, 주제별로 **취약/안전 코드 + 실습 문서(md·docx)**로 다룬다. 개념 요약은 `OWASP_Top10_2025_한글요약`(md·docx) 참고.
+각 항목은 **OWASP Top 10 2025** 카테고리와 매핑하며, 주제별로 **취약/안전 코드 + 실습 문서(md·docx)**로 다룬다.
 
 ---
 
@@ -79,7 +79,6 @@
 | CSRF (+GET 삭제) | #1 | `feature/csrf-demo` | `05_CSRF` | ✅ 완료 |
 | JWT 보안 | #7, #4 | `feature/jwt-security-demo` | `06_JWT_Security` | ✅ 완료 |
 | 공급망/SBOM(개념) | #3 | — | `03_Supply_Chain_SBOM` | ✅ 문서 |
-| OWASP Top 10 2025 요약 | 전체 | — | `OWASP_Top10_2025_한글요약` | ✅ 문서 |
 | Mass Assignment / 민감정보 노출 | #6 | (예정) | — | ⏳ 예정 |
 
 > 취약점은 브랜치별로 누적되며(`sqli-demo → access-control-demo → logging-hardening → csrf-demo → jwt-security-demo`), 각 브랜치의 이 문서는 그 시점까지의 완료 상태만 표시한다. 모든 취약점 정리 후 `main`에 최종 병합 예정.

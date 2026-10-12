@@ -308,6 +308,6 @@ if (!allowInsecureSecret)                // false 로 바꿨으므로
 
 ## 7. 다음 단계 · 관련 문서
 - **다음 단계**: `feature/jwt-advanced-demo` (**2단계**) — 토큰 subject 를 **uuid** 로(PII 제거, email 위조 차단) + **Refresh 토큰**(서버 저장 + 회전) 추가
-- 개념: `OWASP_Top10_2025_한글요약` (#7 인증, #4 암호화 하드닝 체크리스트)
+- OWASP Top 10 2025 #7 인증, #4 암호화 하드닝 체크리스트
 - 접근 제어: `02_Insecure_DOR` (인증 ≠ 인가 — 위조로 인증돼도 인가는 별개)
 - 프론트: 토큰 저장 위치(sessionStorage/localStorage)와 XSS 연계는 프론트 보안편에서 다룸
