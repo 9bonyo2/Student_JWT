@@ -5,7 +5,7 @@
 > 점검일: 2026-09-29 · 갱신일: 2026-09-30
 > **이 브랜치(`feature/sqli-demo`) 기준 진행 상태**로 표기한다(완료 ✅ / 예정 ⏳).
 
-각 항목은 **OWASP Top 10 2025** 카테고리와 매핑하며, 주제별로 **취약/안전 코드 + 실습 문서(md·docx)**로 다룬다. 개념 요약은 `OWASP_Top10_2025_한글요약`(md·docx) 참고.
+각 항목은 **OWASP Top 10 2025** 카테고리와 매핑하며, 주제별로 **취약/안전 코드 + 실습 문서(md·docx)**로 다룬다.
 
 ---
 
@@ -61,7 +61,7 @@
 
 ## 공급망 보안 (개념)
 - 코드 취약점과 별개로 **의존성/공급망 위험**(알려진 CVE, SBOM)도 다룬다 — OWASP #3 신설(Software Supply Chain Failures).
-- 개념은 `OWASP_Top10_2025_한글요약`의 #3 보충에서 다룬다. 별도 `03_Supply_Chain_SBOM.md`는 이후 브랜치에서 추가(예정).
+- `03_Supply_Chain_SBOM.md`는 이후 브랜치에서 추가된다(예정).
 
 ---
 
@@ -70,7 +70,6 @@
 | 항목 | OWASP | 브랜치 | 문서 | 상태 |
 |---|---|---|---|---|
 | SQL Injection | #5 | `feature/sqli-demo` | `01_SQL_Injection` | ✅ 완료 |
-| OWASP Top 10 2025 요약 | 전체 | — | `OWASP_Top10_2025_한글요약` | ✅ 문서 |
 | 접근 제어/IDOR | #1 | `feature/access-control-demo` | — | ⏳ 예정 |
 | 로깅·경보 / 예외 처리 | #9, #10 | `feature/logging-hardening` | — | ⏳ 예정 |
 | CSRF (+GET 삭제) | #1 | `feature/csrf-demo` | — | ⏳ 예정 |
