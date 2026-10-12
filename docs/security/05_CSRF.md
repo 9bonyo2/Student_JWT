@@ -294,5 +294,5 @@ curl -s -o /dev/null -w "GET delete -> %{http_code}\n" -b $JAR "$B/users/delete/
 ---
 
 ## 7. 관련 문서
-- 개념: `OWASP_Top10_2025_한글요약` (#1 접근제어 vs #7 인증)
+- OWASP Top 10 2025 #1 접근제어 vs #7 인증
 - 로깅: 비밀번호 변경은 `[AUDIT]` 로그로 기록됨 (`04_Logging_Hardening`)
