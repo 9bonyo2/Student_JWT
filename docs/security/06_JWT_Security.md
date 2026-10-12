@@ -259,6 +259,6 @@ Authorization: Bearer <accessToken>
 
 ## 7. 관련 문서
 - **이전 단계**: `feature/jwt-security-demo` (**1단계** — secret 하드닝, email subject라 공격 성공 시연, JWT 개념·`alg:none`·fail-closed FAQ 포함)
-- 개념: `OWASP_Top10_2025_한글요약` (#7 인증, #4 암호화 하드닝 체크리스트)
+- OWASP Top 10 2025 #7 인증, #4 암호화 하드닝 체크리스트
 - 접근 제어: `02_Insecure_DOR` (인증 ≠ 인가 — 위조로 인증돼도 인가는 별개)
 - 프론트: 토큰 저장 위치(sessionStorage/localStorage)와 XSS 연계는 프론트 보안편에서 다룸
