@@ -207,5 +207,5 @@ grep "\[ERROR\]" logs/spring.log | tail -1
 
 ## 6. 관련 문서
 
-- 개념: `OWASP_Top10_2025_한글요약` (#9 로깅 보충 / #10 오류 메시지 숨김의 두 층)
+- OWASP Top 10 2025 #9 로깅 보충 / #10 오류 메시지 숨김의 두 층
 - 접근 거부(403)가 나온 IDOR: `02_Insecure_DOR`
