@@ -129,8 +129,9 @@ JWT access 토큰은 서버가 상태를 기억하지 않는 **stateless** 방�
 5. 사용자가 로그아웃 → `POST /api/userinfos/logout` → 서버가 **해당 refresh 를 DB 에서 삭제**(그 순간부터 재사용 불가)
 
 ```java
-// 회전(RefreshTokenService.rotate): 유효하면 폐기 후 새 토큰 발급
-RefreshToken rt = repository.findByToken(presented)
+// 회전(RefreshTokenService.rotate) 기본형 — 해시 저장·재사용 탐지 보강 전의 흐름.
+// 최종 코드(해시 조회 + revoked 표시 + 재사용 탐지)는 §4-5 참고.
+RefreshToken rt = repository.findByTokenHash(hash(presented))
         .orElseThrow(() -> new BadCredentialsException("유효하지 않은 refresh"));
 if (rt.getExpiresAt().isBefore(Instant.now())) { repository.delete(rt); throw ...만료; }
 repository.delete(rt);          // 1회용 → 즉시 폐기
@@ -178,11 +179,63 @@ return issue(rt.getUserUuid()); // 새 refresh 발급(회전)
 | 예전 refresh 재사용 | **401** ✅ (1회용 → 폐기됨, 재사용 탐지 신호) |
 | `POST /logout` 후 그 refresh 로 `/refresh` | **401** ✅ (서버에서 폐기) |
 
-### 4-5. 한계와 운영 보강 포인트
+### 4-5. 보강 적용 — 토큰 해시 저장 + 재사용 탐지 (2026-10-13 적용됨) 🆕
 
-refresh 서버 저장은 **JWT 의 stateless 장점을 일부 포기**하는 트레이드오프다(DB 조회가 늘어남). 대신 **무효화(로그아웃·회전·탈취 대응)** 라는, stateless 만으로는 불가능했던 능력을 얻는다. 운영 환경에서는 추가로:
-- refresh **원문 대신 해시**를 DB 에 저장(DB 유출 시에도 바로 재사용 불가)
-- **재사용 탐지 시 해당 사용자의 모든 refresh 를 일괄 폐기**(§4-3 표의 탐지를 실제 대응으로 연결)
+refresh 서버 저장은 **JWT 의 stateless 장점을 일부 포기**하는 트레이드오프다(DB 조회가 늘어남). 대신 **무효화(로그아웃·회전·탈취 대응)** 라는, stateless 만으로는 불가능했던 능력을 얻는다. §4-3에서 "폐기된 refresh 재사용 시 401 → 이상 신호로 탐지 가능"까지는 1차 구현에 있었지만, **탐지된 신호로 실제 무엇을 하는지**와 **DB 유출 시 원문 노출** 문제는 비어 있었다 — 이번에 두 가지를 채웠다.
+
+**① 원문 대신 해시 저장**
+
+`RefreshToken.tokenHash`(SHA-256, hex 64자)만 DB 에 저장한다. 원문(`plainToken`)은 발급·회전 시 **응답으로만** 전달되고 서버에는 남지 않는다. DB 가 유출돼도 해시는 단방향 함수라 원문을 복원할 수 없으므로, 공격자가 그 값으로 `/refresh`를 호출해 로그인을 유지할 수 없다.
+
+```java
+// RefreshTokenService.sha256Hex
+MessageDigest digest = MessageDigest.getInstance("SHA-256");
+byte[] hash = digest.digest(raw.getBytes(StandardCharsets.UTF_8));
+return HexFormat.of().formatHex(hash);
+```
+
+**② 재사용(탈취) 탐지 → 전체 세션 일괄 폐기**
+
+보강 전 `rotate()`는 사용된 토큰을 즉시 `delete()`했다. 보강 후에는 **삭제 대신 `revoked=true`로 표시**해 남겨둔다. 이미 `revoked=true`인 토큰이 다시 `/refresh`에 들어오면 "정상 사용자가 회전된(이미 버려진) 토큰을 또 쓸 리 없다 → 누군가 훔쳐서 쓰고 있다"로 간주하고, 그 사용자의 **모든 refresh 토큰을 일괄 삭제**한다(공격자가 이미 발급받은 최신 토큰까지 포함 — 공격자·정상 사용자 모두 재로그인 필요).
+
+```java
+// RefreshTokenService.rotate
+if (rt.isRevoked()) {
+    log.warn("[AUDIT] refresh 토큰 재사용 감지 - userUuid={}", rt.getUserUuid());
+    reuseGuard.revokeAll(rt.getUserUuid());   // 별도 트랜잭션(REQUIRES_NEW) — 이유는 아래 함정 참고
+    throw new BadCredentialsException("재사용이 감지되어 모든 세션이 종료되었습니다. 다시 로그인하세요");
+}
+```
+
+> **구현 중 발견한 함정 — "폐기했는데 왜 다시 쓰이지?"** 처음에는 `repository.deleteAllByUserUuid(...)`를 `rotate()` 안에서 바로 호출했다. 그런데 `rotate()` 자체가 `@Transactional`이고, 바로 다음 줄에서 `BadCredentialsException`을 던진다 — Spring 은 `@Transactional` 메서드가 **런타임 예외로 끝나면 기본적으로 트랜잭션을 롤백**하므로, 방금 호출한 삭제까지 통째로 취소돼 버렸다(실제로 재현: 재사용 탐지 로그는 찍히는데 DB 조회해보면 토큰이 그대로 살아 있고 새로 받은 토큰으로 갱신도 계속 성공). 자기 자신을 호출(self-invocation)해도 Spring AOP 프록시를 거치지 않아 `@Transactional` 전파 설정이 무시되므로, 삭제 전용의 별도 빈 `RefreshTokenReuseGuard`(`@Transactional(propagation = REQUIRES_NEW)`)를 만들어 그 빈을 통해 호출하도록 고쳤다 — 그래야 `rotate()`의 롤백과 무관하게 삭제가 즉시 커밋된다.
+
+| 시나리오 | 보강 전 | 보강 후 |
+|---|---|---|
+| DB 유출 | refresh 원문이 그대로 노출 → 즉시 재사용 가능 | 해시만 노출 → 원문 복원 불가, 재사용 불가 |
+| 탈취범이 먼저 `/refresh` 호출 후 정상 사용자가 (이미 회전된) 옛 토큰으로 갱신 시도 | 단순 401(혼란만 발생) — 공격자의 새 토큰은 계속 유효 | **재사용 감지** → 공격자가 받은 새 토큰까지 포함해 해당 사용자 전체 세션 폐기 |
+| 탐지 로그 | 없음 | `[AUDIT] refresh 토큰 재사용 감지 - userUuid=...` (`SecurityAuditListener`와 동일한 `[AUDIT]` 규칙) |
+
+**변경된 파일**
+
+| 파일 | 한 일 |
+|---|---|
+| `RefreshToken` | `token` → `tokenHash`(해시만 저장), `revoked`(boolean) 필드 추가 |
+| `RefreshTokenRepository` | `findByToken` → `findByTokenHash`, 재사용 탐지용 `deleteAllByUserUuid` 추가 |
+| `RefreshTokenService` | `issue`/`rotate`가 `IssuedToken`(원문·userUuid·만료시각) 반환. `rotate`에 재사용 탐지 분기 추가 |
+| `RefreshTokenReuseGuard` | 신규 추가 — 재사용 탐지 시 전체 폐기를 `REQUIRES_NEW` 트랜잭션으로 커밋(위 함정 참고) |
+| `UserInfoController` | `RefreshToken` 엔티티 대신 `IssuedToken`에서 원문 토큰을 꺼내 응답 |
+
+**검증 결과** (실제 서버 기동 후 curl 로 확인, 2026-10-13):
+
+| 단계 | 결과 |
+|---|---|
+| 로그인 → `/refresh`(정상 토큰) | 새 access + 새 refresh 발급(회전) ✅ |
+| 방금 회전으로 폐기된 토큰으로 `/refresh` 재시도 | **401** "재사용이 감지되어 모든 세션이 종료되었습니다" + `[AUDIT]` 경고 로그 ✅ |
+| 바로 위 재사용 탐지로 **함께 폐기됐어야 할 최신(아직 안 쓴) 토큰**으로 `/refresh` | **401** "유효하지 않은 refresh 토큰입니다" — 전체 폐기가 실제로 적용됨 ✅ (최초 구현은 `@Transactional` 롤백으로 이 폐기가 취소되는 버그가 있었다. 위 "구현 중 발견한 함정" 참고) |
+| DB 조회(`SELECT token_hash FROM refresh_token`) | 클라이언트가 받은 원문과 **다른 값**(SHA-256 해시)만 저장됨 확인 ✅ |
+| 로그아웃 후 그 refresh 로 `/refresh` | **401** ✅ (서버에서 삭제됨) |
+
+**남아있는 보강 포인트** (이번 범위 밖)
 - refresh 발급 기기/IP 를 함께 기록해 이상 패턴 모니터링에 활용
 - (보안과 무관한 운영 팁) `expiresAt`(`Instant`, UTC)을 DB 에서 직접 조회하면 로컬 시각보다 이르게 보일 수 있다 — `spring.jpa.properties.hibernate.jdbc.time_zone=Asia/Seoul` 로 KST 기준 표기되도록 맞춰둔다(`application-prod.properties`)
 
@@ -241,6 +294,8 @@ Authorization: Bearer <accessToken>
 | `alg:none`·서명 변조 | `verifyWith()` 로 서명 필수 검증(이미 적용) | 기존 |
 | payload 노출 → 공격 범위 확대 | subject 를 email→**uuid**(불투명)로 교체 → "이메일만 알면 위조" 경로 차단 | **2단계** |
 | 탈취 토큰 장기 유효·로그아웃 무력화 | **짧은 access(15분) + Refresh**(서버 저장·회전·로그아웃 폐기) | **2단계** |
+| DB 유출 시 refresh 원문 노출 | **해시(SHA-256) 저장**(적용됨, §4-5) — DB 유출돼도 원문 복원 불가 | **2단계 보강** |
+| 탈취된 refresh 재사용 | **재사용 탐지 → 해당 사용자 전체 세션 일괄 폐기**(적용됨, §4-5) | **2단계 보강** |
 | 전송 중 탈취 | **HTTPS/TLS** 필수(평문 금지) | 공통 |
 
 ---
