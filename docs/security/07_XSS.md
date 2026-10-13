@@ -264,9 +264,40 @@ private String name;
 - **임베드(iframe)**: 사용자가 `<iframe src="...">`를 직접 쓰게 하면 안 된다 — 대신 **URL만 입력받아 서버가 신뢰 도메인(예: youtube.com) 화이트리스트로 검증**한 뒤, 서버가 직접 `<iframe>` 마크업을 생성하고 `sandbox` 속성으로 최소 권한만 부여한다.
 - **공통 원칙**: sanitizer 라이브러리는 우회 기법이 발견될 때마다 패치되므로 **최신 버전을 유지**하고, 허용 목록은 "필요한 만큼만" 최소로 유지한다. §4-4의 **CSP 헤더**를 함께 적용해, sanitizer가 혹시 놓친 것에 대한 2차 방어선을 둔다.
 
-### 4-4. 심층 방어 — CSP(Content-Security-Policy) 헤더(선택)
+### 4-4. 심층 방어 — CSP(Content-Security-Policy) 헤더 (적용됨 — 2026-10-13)
 
-출력 이스케이프가 1차 방어라면, **CSP는 "혹시 뚫렸을 때"의 2차 방어선**이다. `script-src 'self'` 같은 정책을 헤더로 내려보내면, 인라인 `<script>`나 외부 스크립트 로드를 브라우저 차원에서 차단해 XSS의 피해를 줄일 수 있다(이 앱에는 미적용 — 운영 환경에서 고려할 항목으로 기록).
+출력 이스케이프가 1차 방어라면, **CSP는 "혹시 뚫렸을 때"의 2차 방어선**이다. `script-src 'self'` 같은 정책을 헤더로 내려보내면, 인라인 `<script>`나 외부(신뢰하지 않은 출처) 스크립트 로드를 브라우저 차원에서 차단해 XSS의 피해를 줄일 수 있다.
+
+**적용 위치**: `SecurityConfig.java` — Thymeleaf 화면을 담당하는 `formLoginFilterChain`(`@Order(2)`)에만 적용했다(`/api/**` JSON 체인은 브라우저 렌더링이 없어 CSP가 의미가 없다).
+
+```java
+.headers(headers -> headers
+        .contentSecurityPolicy(csp -> csp
+                .policyDirectives(
+                        "default-src 'self'; "
+                                + "script-src 'self' https://cdn.jsdelivr.net; "
+                                + "style-src 'self' https://cdn.jsdelivr.net; "
+                                + "img-src 'self'; "
+                                + "object-src 'none'; "
+                                + "base-uri 'self'; "
+                                + "frame-ancestors 'self'")))
+```
+
+| 지시어 | 값 | 이유 |
+|---|---|---|
+| `default-src` | `'self'` | 명시하지 않은 나머지 리소스 유형의 기본값을 같은 출처로 제한 |
+| `script-src` | `'self' https://cdn.jsdelivr.net` | 같은 출처 + Bootstrap JS(CDN)만 허용. `'unsafe-inline'` 없음 — **이것이 핵심**: `index-vuln.html`에 `<script>`가 주입돼도 `'self'`가 아니므로 브라우저가 실행을 거부한다 |
+| `style-src` | `'self' https://cdn.jsdelivr.net` | Bootstrap CSS(CDN) 허용. 인라인 `style="..."` 속성은 모두 제거했으므로 `'unsafe-inline'` 불필요 |
+| `img-src` | `'self'` | 이 앱은 외부/인라인 이미지를 쓰지 않음 |
+| `object-src` | `'none'` | `<object>`/`<embed>` 완전 차단 |
+| `base-uri` | `'self'` | `<base>` 태그로 상대경로를 가로채는 공격 차단 |
+| `frame-ancestors` | `'self'` | 클릭재킹 방지(다른 출처가 이 앱을 `<iframe>`으로 감싸지 못함) |
+
+**선행 작업 — inline 제거**: CSP를 `'unsafe-inline'` 없이 걸려면 템플릿에 inline 이벤트 핸들러/스타일이 없어야 한다. 기존 `index.html`/`index-vuln.html`의 삭제 폼에 있던 `onsubmit="return confirm(...)"`와 `style="display:inline"`을 제거하고:
+- `onsubmit` → `static/js/confirm-delete.js`(외부 스크립트, `footer.html`에서 전역 로드)로 이동, 폼에 `class="js-confirm-delete"` 부여
+- `style="display:inline"` → Bootstrap 유틸리티 클래스 `d-inline`으로 대체
+
+**검증(실측, 2026-10-13)**: 서버 기동 후 `curl -sI http://localhost:8080/users/index`로 `Content-Security-Policy` 응답 헤더가 내려오는지 확인하고, 브라우저 개발자 도구 콘솔에서 `index-vuln.html`에 저장된 `<script>` payload가 **"Refused to execute inline script..."** 로 차단되는지 확인한다(§3-2의 Stored XSS가 **CSP 때문에 실제 실행은 되지 않음** — 응답 HTML에는 여전히 이스케이프 없이 포함되므로 "주입 자체"는 재현되지만, "실행"은 CSP가 막는다는 점이 이 심층 방어의 핵심 교육 포인트다).
 
 ### 검증 (안전 버전, 검증됨)
 
@@ -285,7 +316,7 @@ private String name;
 | 입력 검증(보조) | 길이·허용 문자 제한으로 저장 단계에서도 걸러내기 |
 | 화이트리스트 sanitizer | 리치 텍스트가 꼭 필요할 때만, 허용 태그만 남기고 나머지 제거 |
 | `HttpOnly` 쿠키 | 세션 쿠키 탈취(`document.cookie`)는 막아주지만, XSS 자체를 막지는 못함(이미 기본값) |
-| CSP 헤더(심화) | 뚫렸을 때의 2차 방어선 — 인라인/외부 스크립트 실행 범위 제한 |
+| CSP 헤더(심화, **적용됨**) | 뚫렸을 때의 2차 방어선 — `script-src 'self'`로 인라인/신뢰 안 된 외부 스크립트 실행 차단(§4-4) |
 
 > **교육 포인트**: XSS 방어의 원칙은 "입력을 막는다"가 아니라 **"출력할 때 반드시 이스케이프한다"** 이다. 어떤 값이 나중에 위험한 맥락(HTML)에 출력될지 입력 시점엔 알 수 없는 경우가 많고, 블랙리스트 기반 입력 필터링은 우회가 계속 발견되어 왔다.
 

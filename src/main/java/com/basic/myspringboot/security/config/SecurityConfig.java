@@ -109,6 +109,22 @@ public class SecurityConfig {
                         .deleteCookies("JSESSIONID")
                         .logoutSuccessUrl("/")
                 )
+                //[CSP 하드닝] (OWASP XSS 방어) Thymeleaf 화면(이 체인)에만 적용한다.
+                //  - script-src 'self' + cdn.jsdelivr.net : Bootstrap JS 는 CDN에서, 그 외 스크립트는 같은 출처에서만 허용
+                //  - index-vuln.html 은 th:utext 로 사용자 입력을 그대로 렌더링하는 Stored XSS 데모 페이지이지만,
+                //    CSP 가 있으면 주입된 <script> 가 응답 HTML에 그려져도 'self' 가 아니라서 브라우저가 실행을 차단한다
+                //    (= 애플리케이션 코드의 결함과는 별개로 동작하는 심층 방어 계층)
+                //  - inline onsubmit/style 은 모두 제거하고 외부 js/css 로 옮겼으므로 'unsafe-inline' 이 필요 없다
+                .headers(headers -> headers
+                        .contentSecurityPolicy(csp -> csp
+                                .policyDirectives(
+                                        "default-src 'self'; "
+                                                + "script-src 'self' https://cdn.jsdelivr.net; "
+                                                + "style-src 'self' https://cdn.jsdelivr.net; "
+                                                + "img-src 'self'; "
+                                                + "object-src 'none'; "
+                                                + "base-uri 'self'; "
+                                                + "frame-ancestors 'self'")))
                 .build();
     }
 

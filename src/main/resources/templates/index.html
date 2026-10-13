@@ -49,8 +49,8 @@
                 <td><a th:href="@{/users/edit/{id}(id=${user.id})}" class="btn btn-sm btn-outline-primary">Edit</a></td>
                 <td>
                     <!-- [CSRF 하드닝] 삭제는 POST 폼으로: Thymeleaf 가 hidden _csrf 토큰을 자동 삽입한다 -->
-                    <form th:action="@{/users/delete/{id}(id=${user.id})}" method="post" style="display:inline"
-                          onsubmit="return confirm('Are you sure you want to delete this user?')">
+                    <!-- [CSP 대응] inline onsubmit/style 제거: 외부 스크립트(js-confirm-delete) + Bootstrap 유틸리티 클래스(d-inline) 사용 -->
+                    <form th:action="@{/users/delete/{id}(id=${user.id})}" method="post" class="d-inline js-confirm-delete">
                         <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                     </form>
                 </td>
