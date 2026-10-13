@@ -3,6 +3,7 @@ package com.basic.myspringboot.security.models;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -32,6 +33,14 @@ public class UserInfo {
     //"ROLE_USER" 또는 "ROLE_ADMIN,ROLE_USER" 처럼 쉼표로 구분해 저장한다
     @Column(nullable = false)
     private String roles;
+
+    //[로그인 시도 제한 - bruteforce-demo] 연속 로그인 실패 횟수. 로그인 성공 시 0으로 초기화된다.
+    @Column(nullable = false)
+    private int failedLoginCount;
+
+    //[로그인 시도 제한 - bruteforce-demo] 이 시각 이전까지는 비밀번호가 맞아도 로그인을 거부한다.
+    //  null 이면 잠겨 있지 않은 상태. LoginAttemptService 가 설정/해제한다.
+    private Instant lockedUntil;
 
     /** 저장 직전 uuid 가 비어 있으면 무작위로 채운다(시드·회원가입 등 모든 생성 경로 공통). */
     @PrePersist

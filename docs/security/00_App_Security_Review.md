@@ -2,8 +2,8 @@
 
 > 대상: Student_JWT (Spring Boot 3.4.5 / Thymeleaf 세션 + REST JWT)
 > 목적: 강의용 취약점 데모 대상 식별·우선순위화 및 진행 관리
-> 점검일: 2026-09-29 · 갱신일: 2026-10-05
-> **이 브랜치(`feature/security-misconfig-demo`) 기준 진행 상태**로 표기한다(완료 ✅ / 예정 ⏳).
+> 점검일: 2026-09-29 · 갱신일: 2026-10-14
+> **이 브랜치(`feature/bruteforce-demo`) 기준 진행 상태**로 표기한다(완료 ✅ / 예정 ⏳).
 
 각 항목은 **OWASP Top 10 2025** 카테고리와 매핑하며, 주제별로 **취약/안전 코드 + 실습 문서(md·docx)**로 다룬다.
 
@@ -74,6 +74,12 @@
 - **조치**: 노출 범위를 `health,info`로 축소(불필요한 기능 끄기) + `SecurityConfig`에 `/actuator/**` `ROLE_ADMIN` 인증 요구 추가(심층 방어) + `show-values` 기본값(NEVER) 복귀.
 - **브랜치/문서**: `feature/security-misconfig-demo` · `09_Security_Misconfiguration.md` (`actuator_probe.py` 포함)
 
+### 11. 무차별 대입(Brute Force) 로그인 — OWASP #7(인증) ✅ 완료
+- **근거**: `/api/userinfos/login`에 시도 횟수 제한이 없어, 틀린 비밀번호를 무제한 반복 제출할 수 있었음(Burp Suite Intruder 로 단시간에 수백~수천 회 자동 반복 가능, 검증됨).
+- **영향**: 사전 공격(dictionary attack)·크리덴셜 스터핑으로 약한 비밀번호 계정이 뚫릴 때까지 걸리는 시도 비용이 사실상 없음.
+- **조치**: `UserInfo`에 `failedLoginCount`/`lockedUntil` 추가. 로그인 시 ① 잠금 여부를 먼저 확인(잠겨 있으면 비밀번호 검증 없이 즉시 401) ② 인증 실패 시 실패 횟수를 누적해 임계치(기본 5회) 초과 시 일정 시간(기본 300초) 계정을 잠근다 ③ 인증 성공 시 카운트/잠금을 초기화한다. 잠금 중엔 올바른 비밀번호를 제시해도 거부됨(검증됨). 단, 계정(email) 기준 잠금이라 공격자가 이메일만 알아도 피해자 계정을 고의로 잠글 수 있는 가용성 공격(DoS) 여지가 있음 — 알려진 한계로 문서화(§4-3).
+- **브랜치/문서**: `feature/bruteforce-demo` · `10_Bruteforce_Login_Protection.md`
+
 ---
 
 ## 🟢 LOW / 확인·양호
@@ -103,7 +109,8 @@
 | XSS (Stored) | #5 | `feature/xss-demo` | `07_XSS` | ✅ 완료 |
 | 역직렬화 무결성 실패 | #8 | `feature/deserialization-demo` | `08_Insecure_Deserialization` | ✅ 완료 |
 | 보안 설정 오류 (Actuator 노출) | #2 | `feature/security-misconfig-demo` | `09_Security_Misconfiguration` | ✅ 완료 |
+| 무차별 대입 로그인 제한 | #7 | `feature/bruteforce-demo` | `10_Bruteforce_Login_Protection` | ✅ 완료 |
 | 공급망/SBOM(개념) | #3 | — | `03_Supply_Chain_SBOM` | ✅ 문서 |
 | Mass Assignment / 민감정보 노출 | #6 | (예정) | — | ⏳ 예정 |
 
-> 취약점은 브랜치별로 누적되며(`sqli-demo → access-control-demo → logging-hardening → csrf-demo → jwt-security-demo → jwt-advanced-demo → xss-demo → deserialization-demo → security-misconfig-demo`), 각 브랜치의 이 문서는 그 시점까지의 완료 상태만 표시한다. `jwt-advanced-demo`는 `jwt-security-demo`(1단계)에서 분기한 2단계로, 같은 JWT 주제의 심화 단계다. `xss-demo`는 `jwt-advanced-demo`에서, `deserialization-demo`는 `xss-demo`에서, `security-misconfig-demo`는 `deserialization-demo`에서 분기했다. 모든 취약점 정리 후 `main`에 최종 병합 예정.
+> 취약점은 브랜치별로 누적되며(`sqli-demo → access-control-demo → logging-hardening → csrf-demo → jwt-security-demo → jwt-advanced-demo → xss-demo → deserialization-demo → security-misconfig-demo → bruteforce-demo`), 각 브랜치의 이 문서는 그 시점까지의 완료 상태만 표시한다. `jwt-advanced-demo`는 `jwt-security-demo`(1단계)에서 분기한 2단계로, 같은 JWT 주제의 심화 단계다. `xss-demo`는 `jwt-advanced-demo`에서, `deserialization-demo`는 `xss-demo`에서, `security-misconfig-demo`는 `deserialization-demo`에서, `bruteforce-demo`는 `security-misconfig-demo`에서 분기했다. 모든 취약점 정리 후 `main`에 최종 병합 예정.
