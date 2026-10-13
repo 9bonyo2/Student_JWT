@@ -5,9 +5,9 @@ import com.basic.myspringboot.security.controller.dto.AuthResponse;
 import com.basic.myspringboot.security.controller.dto.RefreshRequest;
 import com.basic.myspringboot.security.controller.dto.SignUpRequest;
 import com.basic.myspringboot.security.controller.dto.UserInfoResponse;
-import com.basic.myspringboot.security.models.RefreshToken;
 import com.basic.myspringboot.security.models.UserInfoUserDetails;
 import com.basic.myspringboot.security.service.RefreshTokenService;
+import com.basic.myspringboot.security.service.RefreshTokenService.IssuedToken;
 import com.basic.myspringboot.security.service.UserInfoUserDetailsService;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -82,7 +82,7 @@ public class UserInfoController {
         //[JWT 하드닝] 토큰 subject 로 email(PII) 대신 불투명 식별자(uuid)를 넣는다
         String accessToken = jwtService.generateToken(userDetails.getUuid());
         //[2단계] 로그인 시 refresh 토큰도 발급(서버 저장) → 짧은 access 만료 후 재발급에 사용
-        String refreshToken = refreshTokenService.issue(userDetails.getUuid()).getToken();
+        String refreshToken = refreshTokenService.issue(userDetails.getUuid()).plainToken();
         return ResponseEntity.ok(AuthResponse.of(accessToken, refreshToken,
                 jwtService.getAccessExpireSeconds(), UserInfoResponse.from(userDetails)));
     }
@@ -94,10 +94,11 @@ public class UserInfoController {
     @PostMapping("/refresh")
     public ResponseEntity<AuthResponse> refresh(@Valid @RequestBody RefreshRequest request) {
         //유효하지 않으면 BadCredentialsException → 401 (DefaultExceptionAdvice)
-        RefreshToken rotated = refreshTokenService.rotate(request.getRefreshToken());
-        UserInfoUserDetails userDetails = userDetailsService.loadUserByUuid(rotated.getUserUuid());
+        //(재사용 탐지로 실패한 경우도 동일하게 401 — §RefreshTokenService.rotate 참고)
+        IssuedToken rotated = refreshTokenService.rotate(request.getRefreshToken());
+        UserInfoUserDetails userDetails = userDetailsService.loadUserByUuid(rotated.userUuid());
         String accessToken = jwtService.generateToken(userDetails.getUuid());
-        return ResponseEntity.ok(AuthResponse.of(accessToken, rotated.getToken(),
+        return ResponseEntity.ok(AuthResponse.of(accessToken, rotated.plainToken(),
                 jwtService.getAccessExpireSeconds(), UserInfoResponse.from(userDetails)));
     }
 
