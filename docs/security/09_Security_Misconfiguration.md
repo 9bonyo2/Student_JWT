@@ -159,6 +159,21 @@ Actuator가 제공하는 기능을 전부 켜 둘 필요는 없다. **로드밸�
 | `SecurityConfig`에 `/actuator/**` 인증 요구 추가 | 인증 없는 요청은 `302`(로그인 페이지)로 차단, 데이터 미노출 |
 | `/actuator/health`, `/actuator/info` | 인증 없이도 `200` 유지 — 모니터링 기능은 그대로 동작 |
 
+### 4-4. 안전하게 기능 확장하기 — Micrometer 집계 추가
+
+노출 범위를 최소화한다고 해서 운영에 필요한 기능까지 포기할 필요는 없다. `SecurityAuditListener`에 `MeterRegistry`를 주입해, 로그인 성공/실패 이벤트를 `auth.events` 카운터(`result=success|failure`)로 집계하도록 확장했다.
+
+```java
+private final MeterRegistry meterRegistry;
+
+meterRegistry.counter("auth.events", "result", "success").increment();
+meterRegistry.counter("auth.events", "result", "failure").increment();
+```
+
+핵심은 새로 생기는 조회 경로(`/actuator/metrics/auth.events`)가 4-2에서 추가한 `.requestMatchers("/actuator/**").hasAuthority("ROLE_ADMIN")` 규칙을 그대로 적용받는다는 것이다 — `SecurityConfig`는 전혀 건드리지 않았다. 기본 노출 범위(`health,info`)도 그대로 둔 채, 집계값을 실제로 보려면 `ACTUATOR_EXPOSURE=health,info,metrics`로 의도적으로 넓혀야 한다.
+
+> **실측(2026-10-14)**: REST·폼 로그인으로 성공 2건·실패 2건을 발생시킨 뒤 관리자 세션으로 `/actuator/metrics/auth.events`를 조회 — `result=success` → `2`, `result=failure` → `2`. 세션 없이 조회하면 `302`(로그인 페이지로 리다이렉트)로 차단되는 것도 함께 확인했다.
+
 ---
 
 ## 5. 방어 정리
