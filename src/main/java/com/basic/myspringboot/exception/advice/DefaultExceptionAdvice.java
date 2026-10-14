@@ -15,6 +15,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -49,12 +50,23 @@ public class DefaultExceptionAdvice {
 //    }
 
     //숫자타입의 값에 문자열타입의 값을 입력으로 받았을때 발생하는 오류
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    protected ResponseEntity<Object> handleException(HttpMessageNotReadableException e) {
+//    @ExceptionHandler(HttpMessageNotReadableException.class)
+//    protected ResponseEntity<Object> handleException(HttpMessageNotReadableException e) {
+//        log.error(e.getMessage(), e);
+//
+//        Map<String, Object> result = new HashMap<String, Object>();
+//        result.put("message", "숫자타입의 값만 가능합니다!!");
+//        result.put("httpStatus", HttpStatus.BAD_REQUEST.value());
+//
+//        return new ResponseEntity<>(result, HttpStatus.BAD_REQUEST);
+//    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    protected ResponseEntity<Object> handleException(MethodArgumentTypeMismatchException e) {
         log.error(e.getMessage(), e);
 
         Map<String, Object> result = new HashMap<String, Object>();
-        result.put("message", e.getMessage());
+        result.put("message", "숫자타입의 값만 가능합니다!!");
         result.put("httpStatus", HttpStatus.BAD_REQUEST.value());
 
         return new ResponseEntity<>(result, HttpStatus.BAD_REQUEST);
