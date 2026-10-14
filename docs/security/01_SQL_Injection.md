@@ -31,7 +31,7 @@
 `SqlInjectionDemoService.searchVulnerable()`:
 
 ```java
-// 🔴 취약 : 입력이 SQL 구문의 일부가 된다
+//  취약 : 입력이 SQL 구문의 일부가 된다
 String sql = "SELECT student_id, name, student_number FROM students "
            + "WHERE name LIKE '%" + name + "%'";
 return jdbcTemplate.queryForList(sql);
@@ -40,7 +40,7 @@ return jdbcTemplate.queryForList(sql);
 `SqlInjectionDemoService.searchSafe()`:
 
 ```java
-// 🟢 안전 : 입력은 '?' 자리에 "값"으로만 전달된다
+//  안전 : 입력은 '?' 자리에 "값"으로만 전달된다
 String sql = "SELECT student_id, name, student_number FROM students WHERE name LIKE ?";
 return jdbcTemplate.queryForList(sql, "%" + name + "%");
 ```
@@ -53,11 +53,11 @@ return jdbcTemplate.queryForList(sql, "%" + name + "%");
 
 | 용도 | 메서드 | URL |
 |---|---|---|
-| 🔴 취약 검색 (JdbcTemplate) | GET | `/api/vuln/sqli/students?name=Alice` |
-| 🟢 안전 검색 (JdbcTemplate) | GET | `/api/vuln/sqli/students-safe?name=Alice` |
+|  취약 검색 (JdbcTemplate) | GET | `/api/vuln/sqli/students?name=Alice` |
+|  안전 검색 (JdbcTemplate) | GET | `/api/vuln/sqli/students-safe?name=Alice` |
 | 실행 SQL 확인 | GET | `/api/vuln/sqli/students/debug?name=...` |
-| 🔴 취약 검색 (JPA 네이티브) | GET | `/api/vuln/sqli/students-jpa?name=Alice` |
-| 🟢 안전 검색 (JPA 네이티브) | GET | `/api/vuln/sqli/students-jpa-safe?name=Alice` |
+|  취약 검색 (JPA 네이티브) | GET | `/api/vuln/sqli/students-jpa?name=Alice` |
+|  안전 검색 (JPA 네이티브) | GET | `/api/vuln/sqli/students-jpa-safe?name=Alice` |
 
 > 실습 편의를 위해 `/api/vuln/**` 는 인증 없이 접근할 수 있도록 열려 있다(`SecurityConfig`).
 
@@ -92,7 +92,7 @@ name = %' UNION SELECT 1,2,3 #
 ```
 → `1, 2, 3` 한 행이 결과에 섞여 나오면 컬럼 수가 3으로 맞은 것이다.
 
-### 4-4. 🔥 UNION 기반 계정 정보 탈취
+### 4-4.  UNION 기반 계정 정보 탈취
 
 ```
 name = %' UNION SELECT id, email, password FROM user_info #
@@ -108,7 +108,7 @@ name = %' UNION SELECT 1, column_name, 3 FROM information_schema.columns WHERE t
 ```
 → 공격자가 테이블·컬럼 구조를 알아내는 과정. (교재 219p 실습파일의 흐름과 동일)
 
-### ⚠️ 실습 함정 : 브라우저 주소창은 페이로드를 훼손한다
+###  실습 함정 : 브라우저 주소창은 페이로드를 훼손한다
 
 브라우저 주소창에 페이로드를 직접 넣으면 인젝션이 **실패**할 수 있다.
 
@@ -138,18 +138,18 @@ curl "http://localhost:8080/api/vuln/sqli/students?name=%25%27%20UNION%20SELECT%
 
 | 도구 | 문자열 결합 | 파라미터 바인딩 |
 |---|---|---|
-| JdbcTemplate | 🔴 취약 (`students`) | 🟢 안전 (`students-safe`) |
-| **JPA 네이티브** | 🔴 **취약** (`students-jpa`) | 🟢 안전 (`students-jpa-safe`) |
+| JdbcTemplate |  취약 (`students`) |  안전 (`students-safe`) |
+| **JPA 네이티브** |  **취약** (`students-jpa`) |  안전 (`students-jpa-safe`) |
 
 JPA 취약 코드(`JpaSqlInjectionDemoService`):
 ```java
-// 🔴 JPA 인데도 문자열을 결합하면 동일하게 뚫린다
+//  JPA 인데도 문자열을 결합하면 동일하게 뚫린다
 String sql = "SELECT student_id, name, student_number FROM students "
            + "WHERE name LIKE '%" + name + "%'";
 entityManager.createNativeQuery(sql).getResultList();
 ```
 ```java
-// 🟢 같은 네이티브 쿼리라도 바인딩하면 안전하다
+//  같은 네이티브 쿼리라도 바인딩하면 안전하다
 String sql = "SELECT student_id, name, student_number FROM students WHERE name LIKE :name";
 entityManager.createNativeQuery(sql).setParameter("name", "%" + name + "%").getResultList();
 ```
