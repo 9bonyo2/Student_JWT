@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -86,7 +87,10 @@ public class SecurityConfig {
         //  - 공격자 페이지의 위조 요청은 토큰이 없어 403 으로 거부됨
         //  - JWT 체인은 Authorization 헤더 기반이라 위에서 csrf.disable() 을 유지한다
         return http
+                //Csrf off
                 //.csrf(csrf -> csrf.disable())
+                //Csrf On
+                .csrf(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers("/login/**").permitAll()
                             .requestMatchers("/users/**").authenticated()
