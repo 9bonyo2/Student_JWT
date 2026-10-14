@@ -144,9 +144,9 @@ return http
 | 테스트 | 결과 |
 |---|---|
 | `/login` 폼의 `_csrf` 토큰 | 자동 주입됨 (`nKFCV2ulcr0_...`) |
-| 정상 로그인 (토큰 포함) | **302** ✅ |
-| 🔴 위조 요청 (토큰 없음) | **403** (차단) ✅ |
-| 🟢 정상 변경 (토큰 포함) | **200** ✅ |
+| 정상 로그인 (토큰 포함) | **302**  |
+|  위조 요청 (토큰 없음) | **403** (차단)  |
+|  정상 변경 (토큰 포함) | **200**  |
 
 > **교육 포인트**: "REST(JWT 헤더)는 CSRF를 꺼도 되지만, 세션+쿠키는 반드시 켜야 한다." 인증 방식에 따라 CSRF 판단이 다르다.
 
@@ -192,7 +192,7 @@ CSRF의 두 번째 벡터는 **상태 변경을 GET으로 받는 것**이다. **
 
 삭제는 상태 변경이므로 POST로 받는다. Thymeleaf가 `_csrf` 토큰을 자동 삽입하고, 위조 요청은 토큰이 없어 차단된다.
 ```java
-@PostMapping("/delete/{id}")          // 안전 ✅ index.html 삭제 폼이 사용
+@PostMapping("/delete/{id}")          // 안전  index.html 삭제 폼이 사용
 public String deleteUser(@PathVariable long id) { deleteById(id); return "redirect:/users/index"; }
 ```
 ```html
@@ -207,7 +207,7 @@ public String deleteUser(@PathVariable long id) { deleteById(id); return "redire
 
 같은 경로에 **GET 핸들러를 함께** 둔다. HTTP 메서드가 달라(GET↔POST) 별도로 매핑되며, GET은 CSRF 토큰 검증 대상이 아니므로 토큰 없이도 실행된다.
 ```java
-//[취약 ⚠️ - 공격 재현 실습 전용] GET 은 CSRF 토큰 검증을 우회한다
+//[취약  - 공격 재현 실습 전용] GET 은 CSRF 토큰 검증을 우회한다
 @GetMapping("/delete/{id}")
 public String deleteUserLegacyVulnerable(@PathVariable long id) { deleteById(id); return "redirect:/users/index"; }
 ```
@@ -259,8 +259,8 @@ curl -s -o /dev/null -w "GET delete -> %{http_code}\n" -b $JAR "$B/users/delete/
 
 | 요청 | 전송 | 결과 |
 |---|---|---|
-| `GET /users/delete/{id}` | JSESSIONID만 (토큰X) | **302 → 삭제됨** 🔴 (GET은 CSRF 미검증) |
-| `POST /users/delete/{id}` | JSESSIONID만 (토큰X) | **403 → 차단** ✅ (POST는 토큰 필수) |
+| `GET /users/delete/{id}` | JSESSIONID만 (토큰X) | **302 → 삭제됨**  (GET은 CSRF 미검증) |
+| `POST /users/delete/{id}` | JSESSIONID만 (토큰X) | **403 → 차단**  (POST는 토큰 필수) |
 
 > 두 요청은 **HTTP 메서드만 다르다.** GET은 삭제 성공, POST는 403 → "상태 변경을 GET으로 두는 설계" 자체가 CSRF 토큰을 무력화함을 실측으로 확인.
 
@@ -270,9 +270,9 @@ curl -s -o /dev/null -w "GET delete -> %{http_code}\n" -b $JAR "$B/users/delete/
 
 | 동작 | 안전 POST만 있을 때 | 취약 GET이 있을 때 |
 |---|---|---|
-| `<img>` GET 삭제 | **405** (거부) ✅ | **302** (삭제됨) 🔴 |
-| 🔴 위조 삭제 POST(토큰X) | **403** (CSRF 차단) ✅ | **403** ✅ |
-| 🟢 정상 삭제 POST(토큰O) | **302** (삭제됨) ✅ | **302** ✅ |
+| `<img>` GET 삭제 | **405** (거부)  | **302** (삭제됨)  |
+|  위조 삭제 POST(토큰X) | **403** (CSRF 차단)  | **403**  |
+|  정상 삭제 POST(토큰O) | **302** (삭제됨)  | **302**  |
 
 > **교육 포인트**: "토큰만 켜면 안전"이 아니다. **GET으로 상태를 바꾸는 설계 자체**가 CSRF 토큰을 무력화한다. 방어는 토큰 + "상태 변경은 비-GET" 두 가지가 함께여야 한다.
 > **참고**: GET 삭제를 제거한 뒤 405가 500으로 바뀌지 않으려면, #10 예외 하드닝의 catch-all(`@ExceptionHandler(Exception.class)`)이 표준 MVC 예외(405/404 등)를 삼키지 않아야 한다(`ErrorResponse`는 재던짐).
