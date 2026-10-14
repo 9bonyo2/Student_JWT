@@ -172,6 +172,11 @@ curl -s -b "$JAR" -c "$JAR" -X POST "$B/login-process" \
   -D - -o /dev/null | grep -i "^HTTP\|^Location"
 ```
 
+- **`JAR=$(mktemp)`** — curl의 쿠키 저장소로 쓸 임시 파일을 하나 만든다. `-c "$JAR"`(GET /login)로 세션 쿠키(`JSESSIONID`)를 그 파일에 저장해두고, `-b "$JAR"`(POST /login-process)로 같은 요청에 다시 실어 보낸다 — 이게 없으면 두 호출이 서로 다른 세션으로 취급돼 토큰이 안 맞는다. 매번 새 임시 파일을 쓰므로 반복 실행해도 이전 세션과 섞이지 않는다.
+- **`CSRF=$(echo "$LOGIN_PAGE" | grep -o 'name="_csrf" value="[^"]*"' | sed 's/.*value="\([^"]*\)".*/\1/')`** — 로그인 페이지 HTML에서 토큰 값만 뽑아낸다.
+  - `grep -o 'name="_csrf" value="[^"]*"'` : 페이지 전체에서 `name="_csrf" value="실제토큰값"` 형태로 일치하는 부분만 추출한다(`-o`는 매치된 부분만 출력).
+  - `sed 's/.*value="\([^"]*\)".*/\1/'` : 그 문자열에서 `value="`와 뒤따르는 닫는 `"` 사이의 값만 캡처(`\(...\)`)해 나머지는 버리고 그 값(`\1`)으로 치환한다.
+
 **결과(검증됨)**:
 
 | 케이스 | 자격 증명 | 결과 |
