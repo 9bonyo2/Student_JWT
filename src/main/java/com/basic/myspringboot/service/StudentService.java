@@ -13,9 +13,11 @@ import com.basic.myspringboot.security.models.UserInfo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Arrays;
 import java.util.List;
 
 @Service
@@ -139,11 +141,17 @@ public class StudentService {
     }
 
     @Transactional
-    public StudentDTO.Response updateStudent(Long id, StudentDTO.Request request) {
+    public StudentDTO.Response updateStudent(Long id, StudentDTO.Request request, UserInfo currentUser) {
         // Find the student
         Student student = studentRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
                         "Student", "id", id));
+
+        // 접근 제어(IDOR 방지) : 관리자가 아니라면 본인이 등록한 학생만 수정할 수 있다.
+        // {id} 값만 바꿔 남의 학생 정보를 수정하는 것을 막는다.
+        if (!isAdmin(currentUser) && !isOwner(student, currentUser)) {
+            throw new AccessDeniedException("본인이 등록한 학생 정보만 수정할 수 있습니다");
+        }
 
         // Validate department exists (if changing)
         Department department = departmentRepository.findById(request.getDepartmentId())
@@ -242,5 +250,19 @@ public class StudentService {
         //값이 실제로 바뀔 때만 중복을 검사한다 ( 자기 자신의 값은 중복이 아니다 )
         return !newDetail.getPhoneNumber().equals(currentPhone) &&
                 studentDetailRepository.existsByPhoneNumber(newDetail.getPhoneNumber());
+    }
+
+    // roles 는 "ROLE_USER" 또는 "ROLE_ADMIN,ROLE_USER" 처럼 쉼표로 구분된 문자열이다
+    private boolean isAdmin(UserInfo user) {
+        String roles = user.getRoles() == null ? "" : user.getRoles();
+        return Arrays.stream(roles.split(","))
+                .map(String::trim)
+                .anyMatch("ROLE_ADMIN"::equals);
+    }
+
+    // 학생을 등록한 사용자(student.userInfo) 와 현재 로그인한 사용자가 같은지 확인한다
+    private boolean isOwner(Student student, UserInfo user) {
+        return student.getUserInfo() != null
+                && student.getUserInfo().getId().equals(user.getId());
     }
 }
