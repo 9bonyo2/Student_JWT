@@ -25,13 +25,13 @@
 `IdorDemoService`:
 
 ```java
-// 🔴 취약 : 소유권 검사가 없다. 로그인만 되어 있으면 임의의 {id} 조회 가능
+//  취약 : 소유권 검사가 없다. 로그인만 되어 있으면 임의의 {id} 조회 가능
 public ProfileResponse getProfileVulnerable(Long id) {
     UserInfo target = findOrThrow(id);   // 요청자와 무관하게 그냥 조회
     return ProfileResponse.from(target);
 }
 
-// 🟢 안전 : 본인 또는 관리자만 허용
+//  안전 : 본인 또는 관리자만 허용
 public ProfileResponse getProfileSecure(Long id, UserInfoUserDetails me) {
     boolean isAdmin = me.getAuthorities().stream()
             .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
@@ -51,8 +51,8 @@ public ProfileResponse getProfileSecure(Long id, UserInfoUserDetails me) {
 
 | 용도 | 메서드 | URL | 인증 |
 |---|---|---|---|
-| 🔴 취약 조회 | GET | `/api/idor/profiles/{id}` | 필요 |
-| 🟢 안전 조회 | GET | `/api/idor/profiles-safe/{id}` | 필요 |
+|  취약 조회 | GET | `/api/idor/profiles/{id}` | 필요 |
+|  안전 조회 | GET | `/api/idor/profiles-safe/{id}` | 필요 |
 
 > 이 경로는 `/api/**` 규칙에 따라 **JWT 인증이 필요**하다. (IDOR은 "로그인 후 남의 것 접근"이라 인증이 전제되어야 의미가 있다.)
 
@@ -71,7 +71,7 @@ TOKEN=$(curl -s -X POST http://localhost:8080/api/userinfos/login \
   | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
 ```
 
-### 4-2. 🔴 IDOR: 남(admin, id=1)의 프로필 조회
+### 4-2.  IDOR: 남(admin, id=1)의 프로필 조회
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/idor/profiles/1
@@ -82,7 +82,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/idor/profiles/1
 ```
 → `{id}` 를 2, 3... 으로 바꾸면 전체 사용자를 열람할 수 있다(IDOR).
 
-### 4-3. 🟢 안전: 남의 것 조회 시도 → 403
+### 4-3.  안전: 남의 것 조회 시도 → 403
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/idor/profiles-safe/1
@@ -91,7 +91,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/idor/profiles-s
 {"statusCode":403,"message":"본인 또는 관리자만 조회할 수 있습니다", ...}
 ```
 
-### 4-4. 🟢 안전: 본인(id=2) 조회 → 200
+### 4-4.  안전: 본인(id=2) 조회 → 200
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/idor/profiles-safe/2
