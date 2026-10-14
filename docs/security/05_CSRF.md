@@ -235,6 +235,17 @@ http.csrf(csrf -> csrf.ignoringRequestMatchers("/api/**"));
 - 그래서 `th:action` 폼은 개발자가 토큰을 신경 쓰지 않아도 되고, **공격자 페이지는 이 토큰 값을 알 수 없어 403**이 된다.
 - AJAX/수동 요청은 `${_csrf.token}`, `${_csrf.headerName}`으로 토큰을 꺼내 헤더/파라미터에 넣는다.
 
+### 4-3. CsrfFilter 동작 방식
+
+Spring Security의 CSRF 보호는 필터 체인에 등록되는 `CsrfFilter`(`OncePerRequestFilter`)가 담당한다.
+
+1. 요청이 들어오면 먼저 HTTP 메서드를 확인한다. `GET`/`HEAD`/`TRACE`/`OPTIONS`처럼 상태를 바꾸지 않는("안전한") 메서드는 토큰 검사 없이 그대로 통과시킨다 — 대신 세션에 토큰이 없으면 이번 요청에서 새로 발급해, 다음에 보여줄 폼에 심을 수 있게 한다.
+2. `POST`/`PUT`/`DELETE`/`PATCH` 같은 상태 변경 메서드는 `CsrfTokenRepository`(기본은 세션)에 저장된 "기대 토큰"을 가져온다.
+3. 요청에 실려 온 토큰을 `CsrfTokenRequestHandler`로 찾는다 — 기본적으로 파라미터 `_csrf` 또는 헤더 `X-CSRF-TOKEN` 둘 다 확인한다.
+4. 기대 토큰과 요청 토큰을 비교한다. 토큰이 없으면 `MissingCsrfTokenException`, 값이 다르면 `InvalidCsrfTokenException`이 발생해 `AccessDeniedHandler`가 **컨트롤러에 도달하기도 전에 403으로 거부**한다. 일치하면 다음 필터로 넘어가 정상적으로 컨트롤러까지 도달한다.
+
+세션 인증(`Authentication`) 여부와 이 토큰 비교는 서로 다른 필터가 담당하는 별개의 검사다. 그래서 로그인에 성공해 세션이 인증된 뒤에도 매 상태변경 요청마다 토큰 검사를 다시 통과해야 하며, 앞서 확인한 `change-password` 요청이 토큰 없이 `403`으로 막힌 것도 이 흐름 그대로다.
+
 ---
 
 ## 5. 추가 이슈 : 상태 변경 GET (취약 재현 vs 안전)
