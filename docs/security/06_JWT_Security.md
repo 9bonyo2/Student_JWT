@@ -42,10 +42,10 @@ JWT의 안전은 거의 전부 **secret(서명 키) 관리**에 달려 있다. *
 
 | # | 취약점 | 위험 | 방어 | 단계 |
 |---|---|---|---|---|
-| 1 | **secret이 약함/공개**(소스 하드코딩) | 유출 시 **누구나 admin 토큰 위조** | ① secret을 **env로 분리**·강하게 ② 기동 시 **약한 secret 거부(fail-closed)** | ✅ **1단계 코드** |
+| 1 | **secret이 약함/공개**(소스 하드코딩) | 유출 시 **누구나 admin 토큰 위조** | ① secret을 **env로 분리**·강하게 ② 기동 시 **약한 secret 거부(fail-closed)** |  **1단계 코드** |
 | 2 | alg:none·서명 변조 | 서명 우회 | `verifyWith()`로 서명 필수 검증 | 기존 코드 |
-| 3 | payload 노출(base64) | **email 등 PII 유출** | 토큰 subject를 **email→uuid**(불투명)로 | 🔜 **2단계 코드** |
-| 4 | 탈취 토큰 장기 유효 | 로그아웃·탈취 후에도 유효 | **짧은 만료 + Refresh**(서버저장·회전) | 🔜 **2단계 코드** |
+| 3 | payload 노출(base64) | **email 등 PII 유출** | 토큰 subject를 **email→uuid**(불투명)로 |  **2단계 코드** |
+| 4 | 탈취 토큰 장기 유효 | 로그아웃·탈취 후에도 유효 | **짧은 만료 + Refresh**(서버저장·회전) |  **2단계 코드** |
 
 > HS256은 **같은 secret으로 서명·검증**한다. 그래서 secret 유출 = 위조 가능 → secret 관리가 JWT 보안의 핵심이다.
 
@@ -56,7 +56,7 @@ JWT의 안전은 거의 전부 **secret(서명 키) 관리**에 달려 있다. *
 > 취약 상태 = `application.properties` 의 기본 secret + `jwt.allow-insecure-secret=true`
 > 1단계는 토큰 subject 가 **email** 이므로, 아래 공격이 **그대로 성공**한다.
 
-### 3-1. Secret 유출 → 토큰 위조 → email 로 role 까지 알아내고 관리자 탈취 ⭐
+### 3-1. Secret 유출 → 토큰 위조 → email 로 role 까지 알아내고 관리자 탈취 
 
 **이 공격은 2단계로 이어진다**: **① 탈취한 토큰을 디코딩해 email 확인**(아직 role 은 모른다) → **② 그 email 로 새 토큰을 위조**해 `/me` 를 호출하면 **role 까지 드러나고, 동시에 관리자 권한도 얻는다.**
 
@@ -83,11 +83,11 @@ curl -s -w "\n%{http_code}\n" "$B/api/userinfos/me" -H "Authorization: Bearer $F
 
 | 요청 | 결과 |
 |---|---|
-| 위조 admin 토큰으로 `/me` | **200** → `{"email":"admin@aa.com","roles":["ROLE_ADMIN","ROLE_USER"]}` — **role 도 이 순간 알아낸다** 🔴 |
+| 위조 admin 토큰으로 `/me` | **200** → `{"email":"admin@aa.com","roles":["ROLE_ADMIN","ROLE_USER"]}` — **role 도 이 순간 알아낸다**  |
 
 → **비밀번호를 몰라도 secret 하나로 email → role → 관리자 세션까지 전부 얻는다.** (roles 는 DB에서 오므로, email 만 알면 위조 토큰으로 role 까지 자동으로 드러난다)
 
-> 💡 2단계에서 subject 를 uuid 로 바꾸면, ① 에서 탈취한 토큰을 디코딩해도 **email 이 아니라 의미 없는 uuid** 만 보인다. 그 uuid 를 그대로 다시 넣어 위조해도 **원래 소유자 본인으로 검증될 뿐**이라 공격 의미가 없고, admin 의 진짜 uuid 는 애초에 알아낼 방법이 없다 → **401** (= 2단계 방어)
+>  2단계에서 subject 를 uuid 로 바꾸면, ① 에서 탈취한 토큰을 디코딩해도 **email 이 아니라 의미 없는 uuid** 만 보인다. 그 uuid 를 그대로 다시 넣어 위조해도 **원래 소유자 본인으로 검증될 뿐**이라 공격 의미가 없고, admin 의 진짜 uuid 는 애초에 알아낼 방법이 없다 → **401** (= 2단계 방어)
 
 #### `jwt_forge.py` 는 무엇을 하나 (교육용 위조 스크립트)
 
@@ -127,9 +127,9 @@ python docs/security/jwt_forge.py admin@aa.com none  # alg:none 토큰(3-2 데�
 
 | 공격 | 결과 |
 |---|---|
-| `alg:none` (서명 제거) | **401** ✅ |
-| 서명 변조(bad signature) | **401** ✅ |
-| 토큰 없음 | **401** ✅ |
+| `alg:none` (서명 제거) | **401**  |
+| 서명 변조(bad signature) | **401**  |
+| 토큰 없음 | **401**  |
 
 ```bash
 python docs/security/jwt_forge.py admin@aa.com none   # alg:none 토큰 → 서버는 401
@@ -190,9 +190,9 @@ jwt.allow-insecure-secret=${JWT_ALLOW_INSECURE_SECRET:true}
 
 | 설정 | 결과 |
 |---|---|
-| `allow-insecure=false` + 기본 secret | **기동 실패** (`IllegalStateException`) ✅ fail-closed |
-| **강한** secret(env) 로 교체 후, 유출된 **기본 secret 위조** 토큰으로 `/me` | **401** ✅ 무력화 |
-| 강한 secret 앱에서 **정상 로그인 토큰**으로 `/me` | **200** ✅ |
+| `allow-insecure=false` + 기본 secret | **기동 실패** (`IllegalStateException`)  fail-closed |
+| **강한** secret(env) 로 교체 후, 유출된 **기본 secret 위조** 토큰으로 `/me` | **401**  무력화 |
+| 강한 secret 앱에서 **정상 로그인 토큰**으로 `/me` | **200**  |
 
 > 즉 secret 을 강하게 두고 env 로 관리하면, 리포지토리에 남은 기본 secret 이 유출돼도 **위조가 통하지 않는다.**
 
@@ -214,10 +214,10 @@ JWT 는 **stateless** 라 서버가 발급 후 기억하지 않는다. 그래서
 
 | 위험 | 방어 | 단계 |
 |---|---|---|
-| secret 유출 → 위조 | 강한 secret **env 관리**, 소스에 두지 않기, 기동 시 **약한 secret 거부(fail-closed)**, 로테이션 | 1단계 ✅ |
-| `alg:none`·서명 변조 | `verifyWith()` 로 **서명 필수 검증** | 기존 ✅ |
-| payload 노출(PII) | subject 를 email→**uuid**(불투명)로 교체 | 2단계 🔜 |
-| 탈취 토큰 장기 유효 | **짧은 만료 + Refresh 회전**, revocation | 2단계 🔜 |
+| secret 유출 → 위조 | 강한 secret **env 관리**, 소스에 두지 않기, 기동 시 **약한 secret 거부(fail-closed)**, 로테이션 | 1단계  |
+| `alg:none`·서명 변조 | `verifyWith()` 로 **서명 필수 검증** | 기존  |
+| payload 노출(PII) | subject 를 email→**uuid**(불투명)로 교체 | 2단계  |
+| 탈취 토큰 장기 유효 | **짧은 만료 + Refresh 회전**, revocation | 2단계  |
 | 전송 중 탈취 | **HTTPS/TLS** 필수(평문 금지) | 운영 |
 
 ---
@@ -273,7 +273,7 @@ JWT 는 **stateless** 라 서버가 발급 후 기억하지 않는다. 그래서
 > | 셸 | 명령 |
 > |---|---|
 > | PowerShell | `$env:JWT_SECRET = "<생성한 값>"` |
-> | cmd.exe | `set "JWT_SECRET=<생성한 값>"` (⚠️ `=` 양옆에 공백을 넣지 말 것 — `set "NAME=VALUE"`처럼 **이름=값 전체**를 따옴표로 감싼다. `set NAME = "VALUE"`로 쓰면 공백까지 변수 이름/값에 포함돼 버린다) |
+> | cmd.exe | `set "JWT_SECRET=<생성한 값>"` ( `=` 양옆에 공백을 넣지 말 것 — `set "NAME=VALUE"`처럼 **이름=값 전체**를 따옴표로 감싼다. `set NAME = "VALUE"`로 쓰면 공백까지 변수 이름/값에 포함돼 버린다) |
 > | Git Bash | `JWT_SECRET="<생성한 값>" ./mvnw.cmd spring-boot:run` (그 실행 한 번에만 적용) |
 >
 > ```powershell
@@ -302,7 +302,7 @@ if (!allowInsecureSecret)                // false 로 바꿨으므로
 | 1단계 공격 실습 계속하기(이 브랜치의 기본 목적) | `jwt.allow-insecure-secret=${JWT_ALLOW_INSECURE_SECRET:true}` 로 **되돌린다**(커밋된 원래 값) |
 | "강한 secret 이면 위조가 막힌다" 시연 | `allow-insecure-secret` 은 건드릴 필요 없이 `true` 로 두고, **Q6 처럼 `JWT_SECRET` 환경변수만** 강한 값으로 주입한다 — secret 이 강하면 `weak=false` 가 되어 `allowInsecureSecret` 값 자체를 보지 않는다 |
 
-> 💡 즉 `jwt.allow-insecure-secret` 은 "secret 이 약할 때만" 의미가 있는 **보조 안전장치**다. secret 을 강하게 주입하면 이 플래그를 `true`/`false` 어느 쪽에 둬도 결과는 같다(둘 다 통과).
+>  즉 `jwt.allow-insecure-secret` 은 "secret 이 약할 때만" 의미가 있는 **보조 안전장치**다. secret 을 강하게 주입하면 이 플래그를 `true`/`false` 어느 쪽에 둬도 결과는 같다(둘 다 통과).
 
 ---
 
