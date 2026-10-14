@@ -8,6 +8,7 @@ import com.basic.myspringboot.exception.BusinessException;
 import com.basic.myspringboot.exception.ErrorCode;
 import com.basic.myspringboot.repository.StudentDetailRepository;
 import com.basic.myspringboot.repository.StudentRepository;
+import com.basic.myspringboot.security.AccessControl;
 import com.basic.myspringboot.security.models.UserInfo;
 
 import lombok.RequiredArgsConstructor;
@@ -15,7 +16,6 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Arrays;
 import java.util.List;
 
 @Service
@@ -40,7 +40,7 @@ public class StudentDetailService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
                         "Student", "id", id));
         // 접근 제어(IDOR 방지) : 관리자가 아니라면 본인 정보만 조회할 수 있다.
-        if (!isAdmin(currentUser) && !isOwner(student, currentUser)) {
+        if (!currentUser.isAdmin() && !AccessControl.isOwner(student, currentUser)) {
             throw new AccessDeniedException("본인 정보만 조회할 수 있습니다");
         }
         return StudentDTO.Response.fromEntity(student);
@@ -50,7 +50,7 @@ public class StudentDetailService {
         Student student = studentRepository.findByStudentNumber(studentNumber)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
                         "Student", "student number", studentNumber));
-        if (!isAdmin(currentUser) && !isOwner(student, currentUser)) {
+        if (!currentUser.isAdmin() && !AccessControl.isOwner(student, currentUser)) {
             throw new AccessDeniedException("본인 정보만 조회할 수 있습니다");
         }
         return StudentDTO.Response.fromEntity(student);
@@ -112,7 +112,7 @@ public class StudentDetailService {
                         "Student", "id", id));
 
         // 접근 제어(IDOR 방지) : 관리자가 아니라면 본인이 등록한 학생만 수정할 수 있다.
-        if (!isAdmin(currentUser) && !isOwner(student, currentUser)) {
+        if (!currentUser.isAdmin() && !AccessControl.isOwner(student, currentUser)) {
             throw new AccessDeniedException("본인이 등록한 학생 정보만 수정할 수 있습니다");
         }
 
@@ -211,19 +211,5 @@ public class StudentDetailService {
         //값이 실제로 바뀔 때만 중복을 검사한다 ( 자기 자신의 값은 중복이 아니다 )
         return !newDetail.getPhoneNumber().equals(currentPhone) &&
                 studentDetailRepository.existsByPhoneNumber(newDetail.getPhoneNumber());
-    }
-
-    // roles 는 "ROLE_USER" 또는 "ROLE_ADMIN,ROLE_USER" 처럼 쉼표로 구분된 문자열이다
-    private boolean isAdmin(UserInfo user) {
-        String roles = user.getRoles() == null ? "" : user.getRoles();
-        return Arrays.stream(roles.split(","))
-                .map(String::trim)
-                .anyMatch("ROLE_ADMIN"::equals);
-    }
-
-    // 학생을 등록한 사용자(student.userInfo) 와 현재 로그인한 사용자가 같은지 확인한다
-    private boolean isOwner(Student student, UserInfo user) {
-        return student.getUserInfo() != null
-                && student.getUserInfo().getId().equals(user.getId());
     }
 }
