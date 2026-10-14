@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.UUID;
 
 @Entity
@@ -48,5 +49,13 @@ public class UserInfo {
         if (uuid == null || uuid.isBlank()) {
             uuid = UUID.randomUUID().toString();
         }
+    }
+
+    // roles 는 "ROLE_USER" 또는 "ROLE_ADMIN,ROLE_USER" 처럼 쉼표로 구분된 문자열이다
+    public boolean isAdmin() {
+        String value = roles == null ? "" : roles;
+        return Arrays.stream(value.split(","))
+                .map(String::trim)
+                .anyMatch("ROLE_ADMIN"::equals);
     }
 }
