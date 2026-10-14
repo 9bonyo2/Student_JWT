@@ -150,6 +150,37 @@ return http
 
 > **교육 포인트**: "REST(JWT 헤더)는 CSRF를 꺼도 되지만, 세션+쿠키는 반드시 켜야 한다." 인증 방식에 따라 CSRF 판단이 다르다.
 
+### curl로 CSRF 토큰 받아 로그인하기
+
+CSRF가 켜진 상태에서는 `curl`로 `/login-process`를 바로 호출하면 토큰이 없어 `403`으로 거부된다. 브라우저는 Thymeleaf가 폼에 `_csrf` 히든 필드를 자동으로 넣어주지만, `curl`은 직접 두 단계를 거쳐야 한다.
+
+1. `GET /login` — 세션 쿠키(`JSESSIONID`)와, 응답 HTML의 `<input name="_csrf" value="...">`에 담긴 토큰을 함께 받는다.
+2. 같은 쿠키 + 받은 토큰으로 `POST /login-process`를 호출한다.
+
+```bash
+EMAIL=admin@aa.com; PASSWORD=pwd1; B=http://localhost:8080; JAR=$(mktemp)
+
+# 1) 로그인 페이지에서 세션 쿠키 + _csrf 토큰 획득
+LOGIN_PAGE=$(curl -s -c "$JAR" "$B/login")
+CSRF=$(echo "$LOGIN_PAGE" | grep -o 'name="_csrf" value="[^"]*"' | sed 's/.*value="\([^"]*\)".*/\1/')
+
+# 2) 같은 쿠키(세션)로 로그인 시도
+curl -s -b "$JAR" -c "$JAR" -X POST "$B/login-process" \
+  --data-urlencode "username=$EMAIL" \
+  --data-urlencode "password=$PASSWORD" \
+  --data-urlencode "_csrf=$CSRF" \
+  -D - -o /dev/null | grep -i "^HTTP\|^Location"
+```
+
+**결과(검증됨)**:
+
+| 케이스 | 자격 증명 | 결과 |
+|---|---|---|
+| 성공 | `admin@aa.com` / `pwd1` | `302` → `Location: /users/index` |
+| 실패 | `user@aa.com` / 틀린 비밀번호 | `302` → `Location: /login?error` |
+
+두 경우 모두 `403`이 아니라 `302`가 나온다는 점이 중요하다 — CSRF 토큰 검증은 통과했고, 그 뒤의 아이디·비밀번호 검증 결과에 따라 성공/실패 리다이렉트만 갈리는 것이다. 토큰 자체가 빠지거나 틀리면 이 단계까지 가지도 못하고 `403`으로 막힌다.
+
 ### 4-1. 명시적 CSRF 설정
 
 Spring Security는 CSRF가 **기본 활성**이라 아무것도 안 하면 켜진다. 명시하거나 토큰 저장소를 바꾸려면:
