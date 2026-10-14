@@ -1,5 +1,7 @@
 package com.basic.myspringboot.security.logging;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.security.authentication.event.AbstractAuthenticationFailureEvent;
@@ -17,16 +19,24 @@ import org.springframework.stereotype.Component;
  *   - 민감정보(비밀번호·JWT 토큰)는 절대 로그에 남기지 않는다.
  *   - 사용자 식별자(이메일)는 마스킹한다.
  *   - "[AUDIT]" 태그로 감사 로그를 구분해 나중에 SIEM 등에서 필터링하기 쉽게 한다.
+ *
+ * Micrometer 집계: 로그와 별개로 auth.events 카운터(result=success|failure)를 남긴다.
+ * /actuator/metrics/auth.events 로 조회하며, 이 엔드포인트는 /actuator/** 에 걸린
+ * ROLE_ADMIN 인증 요구를 그대로 적용받는다(SecurityConfig 수정 불필요).
  */
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class SecurityAuditListener {
+
+    private final MeterRegistry meterRegistry;
 
     /** 로그인 성공 */
     @EventListener
     public void onAuthenticationSuccess(AuthenticationSuccessEvent event) {
         String user = event.getAuthentication().getName();
         log.info("[AUDIT] 로그인 성공 - user={}", mask(user));
+        meterRegistry.counter("auth.events", "result", "success").increment();
     }
 
     /**
@@ -38,6 +48,7 @@ public class SecurityAuditListener {
         String user = String.valueOf(event.getAuthentication().getName());
         String reason = event.getException().getClass().getSimpleName();
         log.warn("[AUDIT] 로그인 실패 - user={}, reason={}", mask(user), reason);
+        meterRegistry.counter("auth.events", "result", "failure").increment();
     }
 
     /**
