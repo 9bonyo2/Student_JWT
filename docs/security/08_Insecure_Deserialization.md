@@ -56,7 +56,7 @@ public IssueResponse issue(String code) {
     return new IssueResponse(code, discountPercent, serialize(voucher));
 }
 ```
-**① 🔴 취약 — 역직렬화한 값을 그대로 신뢰**
+**①  취약 — 역직렬화한 값을 그대로 신뢰**
 ```java
 public ApplyResponse applyVulnerable(String voucherToken, long orderAmount) {
     Voucher voucher = deserialize(voucherToken);
@@ -65,7 +65,7 @@ public ApplyResponse applyVulnerable(String voucherToken, long orderAmount) {
     return new ApplyResponse(voucher.getCode(), discountPercent, orderAmount, finalAmount);
 }
 ```
-**② 🟢 안전 — code 로 서버 정책을 다시 조회(재검증)**
+**②  안전 — code 로 서버 정책을 다시 조회(재검증)**
 ```java
 public ApplyResponse applySafe(String voucherToken, long orderAmount) {
     Voucher voucher = deserialize(voucherToken);
@@ -97,7 +97,7 @@ public ApplyResponse applySafe(String voucherToken, long orderAmount) {
 | `Voucher.java` | 직렬화 대상 엔티티(코드/할인율/발급대상) |
 | `IssueRequest`/`IssueResponse` | 발급 요청/응답 DTO |
 | `ApplyRequest`/`ApplyResponse` | 적용 요청/응답 DTO |
-| `DeserializationDemoService` | 발급·🔴취약 적용·🟢안전 적용(재검증) 로직 + 직렬화/역직렬화 공통 로직 |
+| `DeserializationDemoService` | 발급·취약 적용·안전 적용(재검증) 로직 + 직렬화/역직렬화 공통 로직 |
 | `DeserializationDemoController` | `POST /api/vuln/deserialize/{issue,apply,apply-safe}` |
 | `docs/security/voucher_tamper.py` | 공격 재현용 바이트 패치 스크립트 |
 
@@ -140,7 +140,7 @@ private byte[] serializeToBytes(Voucher voucher) {
     }
 }
 
-// ⚠️ 바로 이 메서드가 교육 대상이다 : 클라이언트가 보낸 바이트를 그대로 역직렬화한다.
+//  바로 이 메서드가 교육 대상이다 : 클라이언트가 보낸 바이트를 그대로 역직렬화한다.
 private Voucher deserialize(String voucherToken) {
     return deserializeFromBytes(Base64.getDecoder().decode(voucherToken));
 }
@@ -162,12 +162,12 @@ public IssueResponse issue(@Valid @RequestBody IssueRequest request) {
     return deserializationDemoService.issue(request.code());
 }
 
-@PostMapping("/apply")                 // 🔴 취약
+@PostMapping("/apply")                 //  취약
 public ApplyResponse applyVulnerable(@Valid @RequestBody ApplyRequest request) {
     return deserializationDemoService.applyVulnerable(request.voucherToken(), request.orderAmount());
 }
 
-@PostMapping("/apply-safe")            // 🟢 안전(재검증)
+@PostMapping("/apply-safe")            //  안전(재검증)
 public ApplyResponse applySafe(@Valid @RequestBody ApplyRequest request) {
     return deserializationDemoService.applySafe(request.voucherToken(), request.orderAmount());
 }
@@ -270,11 +270,11 @@ def tamper(token: str, old_percent: int, new_percent: int) -> str:
 | | `applySafe` | `applySigned` |
 |---|---|---|
 | 토큰에 서명이 있는가 | 없음 | 있음(HMAC) |
-| `discountPercent` 필드를 신뢰하는가 | ❌ 안 믿음 — `code`로 재조회 | ✅ 믿음 — 서명이 보증 |
+| `discountPercent` 필드를 신뢰하는가 |  안 믿음 — `code`로 재조회 |  믿음 — 서명이 보증 |
 | 변조를 막는 방식 | 그 필드를 **안 쓴다**(회피) | 변조 자체를 **탐지한다**(검증) |
 | 토큰에 필드가 여러 개라면 | 필드마다 재검증 로직이 필요 | 서명 하나로 전체를 보증 |
 | 서버가 꼭 가지고 있어야 하는 것 | 재조회용 원본 데이터(`COUPON_POLICY`) | 비밀 키(`hmacKey`) 하나만 |
-| 클라이언트에 상태를 완전히 맡길 수 있는가 | ❌ (서버가 매번 재조회) | ✅ (JWT처럼 자체 완결적) |
+| 클라이언트에 상태를 완전히 맡길 수 있는가 |  (서버가 매번 재조회) |  (JWT처럼 자체 완결적) |
 
 **왜 `applySigned`가 더 안전하고 확장성 있는가**: `applySafe`는 "그 필드를 믿지 않는다"는, **딱 그 필드 하나에 국한된** 해결책이다 — `Voucher`에 필드가 10개였다면 10개 전부에 대해 재검증 로직을 따로 만들어야 한다. 반면 `applySigned`는 "데이터 전체가 발급 당시 그대로인가"를 **서명 하나로 한 번에 보증**한다 — 필드가 몇 개든, 어떤 값이든, 서명만 검증하면 전부 안전하다. 또한 `applySafe`는 서버가 재조회할 수 있는 "원본 진실의 원천"(이 데모의 `COUPON_POLICY`)이 있어야만 가능한 방어인데, 복잡한 계산 결과처럼 재조회가 불가능한 데이터라면 이 방법을 쓸 수 없다. `applySigned`는 그런 제약이 없다 — 그래서 JWT 같은 범용 토큰 방식은 "재검증"이 아니라 "서명"을 쓴다.
 
@@ -297,7 +297,7 @@ private String serializeSigned(Voucher voucher) {
     return code + "." + signature;
 }
 
-// ⚠️ 여기가 §4-1(재검증)과의 차이다 : 역직렬화를 "시도하기 전에" 서명을 먼저 검증한다.
+//  여기가 §4-1(재검증)과의 차이다 : 역직렬화를 "시도하기 전에" 서명을 먼저 검증한다.
 private Voucher deserializeSigned(String voucherToken) {
     int dot = voucherToken.indexOf('.');
     byte[] raw = Base64.getDecoder().decode(voucherToken.substring(0, dot));
@@ -332,7 +332,7 @@ public IssueResponse issueSigned(@Valid @RequestBody IssueRequest request) {
     return deserializationDemoService.issueSigned(request.code());
 }
 
-@PostMapping("/apply-signed")          // 🟢 안전(서명)
+@PostMapping("/apply-signed")          //  안전(서명)
 public ApplyResponse applySigned(@Valid @RequestBody ApplyRequest request) {
     return deserializationDemoService.applySigned(request.voucherToken(), request.orderAmount());
 }
@@ -414,8 +414,8 @@ curl -s -X POST "$B/api/vuln/deserialize/apply-safe" -H "Content-Type: applicati
 | 요청 | 적용된 할인율 | 최종 금액(10000원 주문) |
 |---|---|---|
 | 정상 토큰 → `/apply` | 10% (정상) | 9000 |
-| 변조 토큰 → `/apply`(취약) | **100%**(변조값 그대로) 🔴 | **0**(공짜) |
-| 변조 토큰 → `/apply-safe`(안전) | 10%(서버가 재조회) ✅ | 9000 |
+| 변조 토큰 → `/apply`(취약) | **100%**(변조값 그대로)  | **0**(공짜) |
+| 변조 토큰 → `/apply-safe`(안전) | 10%(서버가 재조회)  | 9000 |
 
 → **같은 변조 토큰**인데 어느 엔드포인트가 받느냐에 따라 결과가 갈린다. "역직렬화된 값을 그대로 쓰는가, 재검증하는가"의 차이뿐이다.
 
@@ -444,8 +444,8 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST "$B/api/vuln/deserialize/apply-signed
 
 | 요청 | 결과 |
 |---|---|
-| 정상 서명 토큰 → `/apply-signed` | 10% 할인 적용 ✅ (9000원) |
-| 변조 토큰(100%, 서명 그대로) → `/apply-signed` | **서명 불일치로 즉시 거부** 🔴 역직렬화조차 시도되지 않음 |
+| 정상 서명 토큰 → `/apply-signed` | 10% 할인 적용  (9000원) |
+| 변조 토큰(100%, 서명 그대로) → `/apply-signed` | **서명 불일치로 즉시 거부**  역직렬화조차 시도되지 않음 |
 | 같은 변조 토큰(서명 없이) → `/apply`(취약, 대비용) | **100%** 적용 — 서명이 없었다면 그대로 뚫림 |
 
 `/apply-safe`는 "변조된 값을 쓰지 않음"으로 막고, `/apply-signed`는 "변조 자체를 탐지해서 거부함"으로 막는다 — 접근 방식이 다르다: 전자는 **값을 버리고 재조회**, 후자는 **변조 여부를 수학적으로 검증**한다.
@@ -464,7 +464,7 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST "$B/api/vuln/deserialize/apply-signed
 - 클라이언트와 주고받는 데이터는 **JSON**(Jackson)처럼 "임의 클래스를 복원하지 않는" 포맷을 쓴다. `ObjectInputStream.readObject()`처럼 **클래스패스의 어떤 클래스든** 복원을 시도하는 방식은 피한다.
 - Java 네이티브 직렬화를 꼭 써야 한다면, `ObjectInputFilter`(Java 9+)로 **역직렬화 가능한 클래스를 화이트리스트로 제한**한다.
 
-### 4-3. 상태를 클라이언트에 맡겨야 한다면 — 서명(무결성 보호) ✅ 구현됨
+### 4-3. 상태를 클라이언트에 맡겨야 한다면 — 서명(무결성 보호)  구현됨
 
 "클라이언트가 상태를 들고 다닌다"는 아이디어 자체는 JWT(§06 문서)와 같다. **JWT가 안전한 이유는 서명이 있기 때문**이다 — payload 가 바뀌면 서명 검증이 깨진다. §4-1의 `applySafe`는 이 쿠폰 토큰에 서명이 없다는 전제 하에 "값을 믿지 않는" 방식으로 방어했다. 이번에는 같은 원리를 토큰 자체에 적용해서, "서명이 있으면 믿어도 되는" 버전을 §3-4에서 실제로 구현·검증했다:
 ```
@@ -476,11 +476,11 @@ voucherToken = base64(직렬화된 Voucher) + "." + HMAC-SHA256(직렬화된 Vou
 
 | 테스트 | 결과 |
 |---|---|
-| 정상 토큰 → `/apply-safe` | 10% 할인 적용 ✅ |
-| 변조 토큰(100%) → `/apply-safe` | 여전히 **10%**만 적용(서버 재조회) ✅ |
-| 변조 토큰(100%) → `/apply`(취약, 대비용) | **100%** 적용 🔴 |
-| 정상 서명 토큰 → `/apply-signed` | 10% 할인 적용 ✅ |
-| 변조 토큰(100%, 서명 그대로) → `/apply-signed` | **서명 불일치로 거부** ✅ (§3-4) |
+| 정상 토큰 → `/apply-safe` | 10% 할인 적용  |
+| 변조 토큰(100%) → `/apply-safe` | 여전히 **10%**만 적용(서버 재조회)  |
+| 변조 토큰(100%) → `/apply`(취약, 대비용) | **100%** 적용  |
+| 정상 서명 토큰 → `/apply-signed` | 10% 할인 적용  |
+| 변조 토큰(100%, 서명 그대로) → `/apply-signed` | **서명 불일치로 거부**  (§3-4) |
 
 ---
 
@@ -488,8 +488,8 @@ voucherToken = base64(직렬화된 Voucher) + "." + HMAC-SHA256(직렬화된 Vou
 
 | 방법 | 설명 | 이 브랜치 구현 |
 |---|---|---|
-| **민감 필드 재검증(핵심)** | 역직렬화 결과 중 결과에 영향을 주는 값은 서버가 다시 조회/계산 | ✅ `applySafe` |
-| 무결성 서명 | HMAC/서명으로 변조 자체를 탐지(JWT와 같은 원리) | ✅ `issueSigned`/`applySigned` |
+| **민감 필드 재검증(핵심)** | 역직렬화 결과 중 결과에 영향을 주는 값은 서버가 다시 조회/계산 |  `applySafe` |
+| 무결성 서명 | HMAC/서명으로 변조 자체를 탐지(JWT와 같은 원리) |  `issueSigned`/`applySigned` |
 | 역직렬화 포맷 자체를 안전하게 | Java 네이티브 직렬화 대신 JSON 등 "임의 클래스 복원 없는" 포맷 사용 | 미구현(권장 설명만) |
 | 클래스 화이트리스트 | 꼭 Java 직렬화를 써야 하면 `ObjectInputFilter`로 복원 가능 클래스 제한 | 미구현(권장 설명만) |
 
