@@ -47,6 +47,28 @@ public class SecurityAuditListener {
 ```
 > Spring Security 가 발행하는 인증 이벤트를 받는다. 폼 로그인·REST 로그인 모두 `AuthenticationManager` 를 거치므로 이벤트가 발생한다.
 
+#### 리스너 클래스 동작 방식
+
+`SecurityAuditListener` 는 별도의 등록 코드 없이 `@Component` 로만 선언돼 있다. 메서드를 직접 호출하는 코드는 어디에도 없는데, 이는 `@EventListener` 가 **Spring 의 ApplicationEvent 발행/구독 메커니즘**에 올라타 있기 때문이다.
+
+- `AuthenticationManager`(정확히는 내부 구현체 `ProviderManager`)가 인증을 처리하고 나면, 결과(성공/실패)에 맞는 이벤트를 `ApplicationEventPublisher` 로 발행한다.
+- Spring 컨테이너는 `@EventListener` 가 붙은 메서드의 **파라미터 타입**을 보고, 발행된 이벤트와 타입이 일치(또는 그 이벤트의 상위 타입)하는 모든 빈의 메서드를 찾아 자동으로 호출한다.
+- 즉 `SecurityAuditListener` 는 `AuthenticationManager` 를 직접 참조하지 않고도, 인증이 일어나는 모든 경로(폼 로그인, REST 로그인 등)의 결과를 감사 로그로 남길 수 있다. 새로운 로그인 방식이 추가돼도 리스너 코드를 수정할 필요가 없다는 뜻이다.
+
+#### AuthenticationSuccessEvent / AbstractAuthenticationFailureEvent
+
+| 이벤트 | 패키지 | 발행 시점 | 주요 정보 |
+|---|---|---|---|
+| `AuthenticationSuccessEvent` | `org.springframework.security.authentication.event` | 인증이 성공적으로 완료됐을 때 `ProviderManager` 가 발행 | `getAuthentication()` → 인증된 `Authentication` 객체(사용자명, 권한 등) |
+| `AbstractAuthenticationFailureEvent` | `org.springframework.security.authentication.event` | 인증이 실패했을 때, 실패 원인별 **구체 이벤트**(예: `AuthenticationFailureBadCredentialsEvent`, `AuthenticationFailureDisabledEvent`, `AuthenticationFailureLockedEvent`, `AuthenticationFailureExpiredEvent` 등)의 **공통 부모 클래스**로 발행 | `getAuthentication()` → 인증 시도 정보, `getException()` → 실패 원인 예외(`AuthenticationException`) |
+
+- `AbstractAuthenticationFailureEvent` 자체는 추상 클래스이고, 실제로 발행되는 것은 실패 원인에 따른 구체 서브클래스다. 예를 들어 비밀번호 불일치는 `AuthenticationFailureBadCredentialsEvent`, 계정 잠김은 `AuthenticationFailureLockedEvent` 가 발행된다.
+- 모두 공통 조상인 `AbstractAuthenticationFailureEvent` 를 상속하므로, 실패 원인은 `event.getException().getClass().getSimpleName()` 으로 구분한다(위 코드의 `reason` 값).
+
+#### `SecurityAuditListener` 는 위 이벤트들의 변동사항을 리스닝하는가?
+
+**그렇다.** `onAuthenticationFailure(AbstractAuthenticationFailureEvent event)` 는 파라미터를 **부모 타입**으로 선언하고 있다. Spring 의 `@EventListener` 는 이벤트의 타입 계층(상속 관계)을 보고 매칭하므로, `AuthenticationFailureBadCredentialsEvent`·`AuthenticationFailureLockedEvent`·`AuthenticationFailureDisabledEvent` 등 **어떤 구체 실패 이벤트가 발행되든** 이 메서드 하나가 전부 수신한다. 마찬가지로 `onAuthenticationSuccess(AuthenticationSuccessEvent event)` 는 인증 성공 이벤트만 수신한다. 따라서 이 리스너는 "인증 성공/실패"라는 두 가지 상태 변화를 **누락 없이** 감사 로그로 남긴다.
+
 ### 2-2. 예외 처리 감사 보강 (401/403)
 
 ```java
