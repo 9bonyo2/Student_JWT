@@ -20,7 +20,7 @@ import java.util.List;
 /*
  * [ 권한 정책 ]
  *   목록 전체 조회(/paged, 전체목록) : ROLE_ADMIN           ( 일반 사용자의 전체 학생 열람 차단 )
- *   단건 조회(id, 학번)             : ROLE_USER 또는 ROLE_ADMIN   ( 클래스에 지정 )
+ *   단건 조회(id, 학번)             : 본인 또는 ROLE_ADMIN   ( 클래스에 지정, Service 에서 소유권 검사, 타인 조회 시 403 )
  *   등록                         : ROLE_USER 또는 ROLE_ADMIN
  *   수정                         : ROLE_USER 또는 ROLE_ADMIN   ( 단, 본인이 등록한 학생만 - Service 에서 소유권 검사 )
  *   삭제                         : ROLE_ADMIN
@@ -51,15 +51,18 @@ public class StudentController {
         return ResponseEntity.ok(students);
     }
 
+    // 단건 조회는 본인 정보만 허용한다 ( Service 에서 소유권 검사, 타인 조회 시 403 )
     @GetMapping("/{id}")
-    public ResponseEntity<StudentDTO.Response> getStudentById(@PathVariable Long id) {
-        StudentDTO.Response student = studentService.getStudentById(id);
+    public ResponseEntity<StudentDTO.Response> getStudentById(@PathVariable Long id,
+                                                               @CurrentUser UserInfo currentUser) {
+        StudentDTO.Response student = studentService.getStudentById(id, currentUser);
         return ResponseEntity.ok(student);
     }
 
     @GetMapping("/number/{studentNumber}")
-    public ResponseEntity<StudentDTO.Response> getStudentByStudentNumber(@PathVariable String studentNumber) {
-        StudentDTO.Response student = studentService.getStudentByStudentNumber(studentNumber);
+    public ResponseEntity<StudentDTO.Response> getStudentByStudentNumber(@PathVariable String studentNumber,
+                                                                          @CurrentUser UserInfo currentUser) {
+        StudentDTO.Response student = studentService.getStudentByStudentNumber(studentNumber, currentUser);
         return ResponseEntity.ok(student);
     }
 

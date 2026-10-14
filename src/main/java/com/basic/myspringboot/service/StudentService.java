@@ -45,17 +45,24 @@ public class StudentService {
                 .toList();
     }
 
-    public StudentDTO.Response getStudentById(Long id) {
+    public StudentDTO.Response getStudentById(Long id, UserInfo currentUser) {
         Student student = studentRepository.findByIdWithAllDetails(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
                         "Student", "id", id));
+        // 접근 제어(IDOR 방지) : 관리자가 아니라면 본인 정보만 조회할 수 있다.
+        if (!isAdmin(currentUser) && !isOwner(student, currentUser)) {
+            throw new AccessDeniedException("본인 정보만 조회할 수 있습니다");
+        }
         return StudentDTO.Response.fromEntity(student);
     }
 
-    public StudentDTO.Response getStudentByStudentNumber(String studentNumber) {
+    public StudentDTO.Response getStudentByStudentNumber(String studentNumber, UserInfo currentUser) {
         Student student = studentRepository.findByStudentNumber(studentNumber)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
                         "Student", "student number", studentNumber));
+        if (!isAdmin(currentUser) && !isOwner(student, currentUser)) {
+            throw new AccessDeniedException("본인 정보만 조회할 수 있습니다");
+        }
         return StudentDTO.Response.fromEntity(student);
     }
 
