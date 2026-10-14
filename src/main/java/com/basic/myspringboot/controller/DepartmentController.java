@@ -19,8 +19,9 @@ import java.util.List;
 
 /*
  * [ 권한 정책 ]
- *   조회        : ROLE_USER 또는 ROLE_ADMIN
- *   등록/수정/삭제 : ROLE_ADMIN
+ *   학과 조회(목록/단건)              : ROLE_USER 또는 ROLE_ADMIN   ( Department 는 사용자 소유가 아닌 공용 기준정보 )
+ *   학과별 학생 목록 조회(전체 PII 포함) : ROLE_ADMIN                ( /api/students 전체조회와 동일 정책 - 우회 경로 차단 )
+ *   등록/수정/삭제                   : ROLE_ADMIN                ( 공용 기준정보이므로 소유권 개념 없이 관리자만 허용 )
  */
 @RestController
 @RequestMapping("/api/departments")
@@ -58,8 +59,9 @@ public class DepartmentController {
         return ResponseEntity.ok(department);
     }
 
-    // 페이징 처리된 특정학과의 학생 목록 조회
+    // 페이징 처리된 특정학과의 학생 목록 조회 (전체 PII 포함 목록이므로 관리자만 허용)
     @GetMapping("/{id}/students/paged")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<Page<StudentDTO.Response>> getStudentsByDepartmentIdPaged(
             @PathVariable Long id,
             @PageableDefault(size = 10, sort = "id", direction = Sort.Direction.ASC) Pageable pageable) {
@@ -67,8 +69,9 @@ public class DepartmentController {
         return ResponseEntity.ok(students);
     }
 
-    // 페이징 처리 없는 특정학과의 학생 목록 조회
+    // 페이징 처리 없는 특정학과의 학생 목록 조회 (전체 PII 포함 목록이므로 관리자만 허용)
     @GetMapping("/{id}/students")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<List<StudentDTO.Response>> getStudentsByDepartmentId(@PathVariable Long id) {
         List<StudentDTO.Response> students = studentService.getStudentsByDepartmentId(id);
         return ResponseEntity.ok(students);
