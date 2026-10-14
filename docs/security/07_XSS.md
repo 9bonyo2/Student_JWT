@@ -38,7 +38,7 @@ private String name;
 ### 2-2. UserController — 안전/취약 핸들러를 나란히 둔다 (CSRF 데모와 동일한 패턴)
 
 ```java
-//[안전 ✅][XSS 하드닝] index.html 은 th:text(자동 이스케이프)로 렌더링한다.
+//[안전 ][XSS 하드닝] index.html 은 th:text(자동 이스케이프)로 렌더링한다.
 //  - 이름에 <script> 등을 넣어도 문자열 그대로 화면에 표시될 뿐 실행되지 않는다.
 @GetMapping("/index")
 public String index(Model model) {
@@ -46,7 +46,7 @@ public String index(Model model) {
     return "index";
 }
 
-//[취약 ⚠️ - Stored XSS 공격 재현 실습 전용]
+//[취약  - Stored XSS 공격 재현 실습 전용]
 //  같은 데이터(users)를 index-vuln.html 로 내려주는데, 그 템플릿은 이름을 th:utext(이스케이프 없음)로 렌더링한다.
 //  - 회원가입(이름 필드)에 <script>...</script> 를 넣고 저장하면,
 //    이 목록 페이지를 "보는 모든 사용자(관리자 포함)" 의 브라우저에서 그 스크립트가 그대로 실행된다.
@@ -68,16 +68,16 @@ public String indexVulnerable(Model model) {
 
 | 속성 | 이스케이프 | 결과 | 신뢰할 수 없는 사용자 입력에 |
 |---|---|---|---|
-| `th:text` | 함(자동) | 항상 "문자열"로 표시 | 안전 ✅ (Thymeleaf 기본 권장) |
-| `th:utext` | 안 함 | 값 속 태그/스크립트를 "HTML로 해석"해 실행 | 위험 🔴 |
+| `th:text` | 함(자동) | 항상 "문자열"로 표시 | 안전  (Thymeleaf 기본 권장) |
+| `th:utext` | 안 함 | 값 속 태그/스크립트를 "HTML로 해석"해 실행 | 위험  |
 
 이 둘의 차이를 실제 코드에 적용하면 아래처럼, **딱 한 글자(`u`) 차이**로 안전/취약이 갈린다:
 
 ```html
-<!-- index.html (안전 ✅) -->
+<!-- index.html (안전 ) -->
 <td th:text="${user.name}"></td>
 
-<!-- index-vuln.html (취약 ⚠️) -->
+<!-- index-vuln.html (취약 ) -->
 <td th:utext="${user.name}"></td>
 ```
 `th:text`→`th:utext` **단 하나의 차이**가 "문자열로 표시"와 "HTML/스크립트로 실행"을 가른다.
@@ -87,20 +87,20 @@ public String indexVulnerable(Model model) {
 | 파일 | 구분 | 한 일 |
 |---|---|---|
 | `UserController.java` | 수정 | `/index`(안전)에 설명 주석 추가, `/index-vuln`(취약) 핸들러 신규 추가 |
-| `index.html` | 수정 | 취약 데모 페이지로 이동하는 "⚠️ XSS 데모(취약)" 링크 추가 |
+| `index.html` | 수정 | 취약 데모 페이지로 이동하는 " XSS 데모(취약)" 링크 추가 |
 | `index-vuln.html` | 추가 | `th:utext`로 렌더링하는 취약 템플릿(신규 파일) |
 
 `index.html`에 추가된 두 줄:
 ```html
 <!-- [교육용] XSS(Stored) 공격 재현 전용 페이지로 이동 -->
-<a href="/users/index-vuln" class="btn btn-outline-danger">⚠️ XSS 데모(취약)</a>
+<a href="/users/index-vuln" class="btn btn-outline-danger"> XSS 데모(취약)</a>
 ```
 
 `index-vuln.html`(신규 파일)의 핵심만 보면 — **안전한 `index.html`과 구조는 동일**하고(표·Edit·Delete·네비게이션 버튼 등 그대로), 실제로 다른 부분은 **딱 두 곳**이다:
 ```html
 <!-- 상단 경고 배너(신규) -->
 <div class="alert alert-danger" role="alert">
-    ⚠️ XSS 취약 데모 페이지 — 아래 Name 컬럼은 <code>th:utext</code>(이스케이프 없음)로 렌더링된다. ...
+     XSS 취약 데모 페이지 — 아래 Name 컬럼은 <code>th:utext</code>(이스케이프 없음)로 렌더링된다. ...
 </div>
 
 <!-- Name 컬럼 렌더링(§2-3에서 본 핵심 차이) -->
@@ -272,8 +272,8 @@ private String name;
 
 | 테스트 | 결과 |
 |---|---|
-| `/users/index`(th:text)에 `<script>` 이름 조회 | `&lt;script&gt;...&lt;/script&gt;` — 문자열로만 표시 ✅ |
-| `/users/index-vuln`(th:utext)에 같은 이름 조회 | `<script>...</script>` — 이스케이프 없이 그대로 삽입 🔴 |
+| `/users/index`(th:text)에 `<script>` 이름 조회 | `&lt;script&gt;...&lt;/script&gt;` — 문자열로만 표시  |
+| `/users/index-vuln`(th:utext)에 같은 이름 조회 | `<script>...</script>` — 이스케이프 없이 그대로 삽입  |
 
 ---
 
