@@ -186,6 +186,23 @@ curl -s -b "$JAR" -c "$JAR" -X POST "$B/login-process" \
 
 두 경우 모두 `403`이 아니라 `302`가 나온다는 점이 중요하다 — CSRF 토큰 검증은 통과했고, 그 뒤의 아이디·비밀번호 검증 결과에 따라 성공/실패 리다이렉트만 갈리는 것이다. 토큰 자체가 빠지거나 틀리면 이 단계까지 가지도 못하고 `403`으로 막힌다.
 
+### 로그인 이후에도 요청마다 CSRF 토큰이 필요하다
+
+로그인에 성공해 세션이 인증된 상태가 되어도, 이후 상태를 바꾸는 요청은 각각 자신의 `_csrf` 토큰을 함께 보내야 한다. 인증 여부와 CSRF 토큰 검증은 별개의 단계이며, `CsrfFilter`는 컨트롤러가 호출되기 전에 토큰 유무부터 확인한다.
+
+```bash
+# 로그인된 세션(쿠키 O)으로, CSRF 토큰 없이 비밀번호 변경 시도
+curl -s -b "$JAR" -X POST "$B/users/change-password" -d "newPassword=attacker_pw_1234"
+```
+결과(검증됨): `403 Forbidden` — 세션이 유효해도 토큰이 없으면 차단된다.
+
+같은 세션 안에서는 로그인 때 받은 토큰을 그대로 재사용할 수 있다(기본 설정은 세션당 토큰 1개, 요청마다 바뀌지 않음):
+```bash
+curl -s -b "$JAR" -X POST "$B/users/change-password" \
+  --data-urlencode "newPassword=newpass1234" \
+  --data-urlencode "_csrf=$CSRF"
+```
+
 ### 4-1. 명시적 CSRF 설정
 
 Spring Security는 CSRF가 **기본 활성**이라 아무것도 안 하면 켜진다. 명시하거나 토큰 저장소를 바꾸려면:
