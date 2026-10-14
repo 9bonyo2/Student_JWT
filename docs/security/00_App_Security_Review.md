@@ -9,7 +9,7 @@
 
 ---
 
-## 🔴 HIGH — 우선 조치
+##  HIGH — 우선 조치
 
 ### 1. 접근 제어 미흡 / IDOR — `/api/users` — OWASP #1 
 - **근거**: `UserRestController`, `UserServiceController`에 메서드 인가(`@PreAuthorize`)가 없음. `SecurityConfig`는 `/api/**`에 "인증만" 요구.
@@ -30,7 +30,7 @@
 
 ---
 
-## 🟡 MEDIUM
+##  MEDIUM
 
 ### 4. 로깅·경보 실패 / 예외 처리 미흡 — OWASP #9, #10 
 - **#9**: 인증 실패(401)·접근 거부(403)·비밀번호 변경 등 감사 대상 이벤트에 `[AUDIT]` 로그(출처 IP 포함) 부재.
@@ -51,7 +51,7 @@
 
 ---
 
-## 🟢 LOW / 확인·양호
+##  LOW / 확인·양호
 
 - **`/api/users` 경로 중복** — `UserRestController`·`UserServiceController` 모두 `/api/users` → 혼란·유지보수 위험, 정리 권장.
 - **CORS** — `allowCredentials=true` + `allowedHeaders="*"` → 운영 시 범위 축소 권장 (origin은 명시되어 양호).
@@ -71,11 +71,11 @@
 | 항목 | OWASP | 브랜치 | 문서 | 상태 |
 |---|---|---|---|---|
 | SQL Injection | #5 | `feature/sqli-demo` | `01_SQL_Injection` | 
-| 접근 제어/IDOR | #1 | `feature/access-control-demo` | `02_Insecure_DOR` | ✅ 완료 |
-| 공급망/SBOM(개념) | #3 | — | `03_Supply_Chain_SBOM` | ✅ 문서 |
-| 로깅·경보 / 예외 처리 | #9, #10 | `feature/logging-hardening` | — | ⏳ 예정 |
-| CSRF (+GET 삭제) | #1 | `feature/csrf-demo` | — | ⏳ 예정 |
-| JWT 보안 | #7, #4 | `feature/jwt-security-demo`(예정) | — | ⏳ 예정 |
-| Mass Assignment / 민감정보 노출 | #6 | (예정) | — | ⏳ 예정 |
+| 접근 제어/IDOR | #1 | `feature/access-control-demo` | `02_Insecure_DOR` |  |
+| 공급망/SBOM(개념) | #3 | — | `03_Supply_Chain_SBOM` |  문서 |
+| 로깅·경보 / 예외 처리 | #9, #10 | `feature/logging-hardening` | — |  |
+| CSRF (+GET 삭제) | #1 | `feature/csrf-demo` | — |  |
+| JWT 보안 | #7, #4 | `feature/jwt-security-demo`(예정) | — |  |
+| Mass Assignment / 민감정보 노출 | #6 | (예정) | — |  |
 
 > 취약점은 브랜치별로 누적되며(`sqli-demo → access-control-demo → logging-hardening → csrf-demo`), 각 브랜치의 이 문서는 그 시점까지의 완료 상태만 표시한다. 모든 취약점 정리 후 `main`에 최종 병합 예정.
