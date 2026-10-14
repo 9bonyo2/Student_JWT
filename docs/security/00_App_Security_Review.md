@@ -8,7 +8,7 @@
 
 ---
 
-## 🔴 HIGH — 우선 조치
+##  HIGH — 우선 조치
 
 ### 1. 접근 제어 미흡 / IDOR — `/api/users` — OWASP #1 
 - **근거**: `UserRestController`, `UserServiceController`에 메서드 인가(`@PreAuthorize`)가 없음. `SecurityConfig`는 `/api/**`에 "인증만" 요구.
@@ -28,7 +28,7 @@
 
 ---
 
-## 🟡 MEDIUM
+##  MEDIUM
 
 ### 4. 로깅·경보 실패 / 예외 처리 미흡 — OWASP #9, #10 
 - **#9**: 인증 실패(401)·접근 거부(403)·비밀번호 변경 등 감사 대상 이벤트에 `[AUDIT]` 로그(출처 IP 포함) 부재.
@@ -49,7 +49,7 @@
 
 ---
 
-## 🟢 LOW / 확인·양호
+##  LOW / 확인·양호
 
 - **`/api/users` 경로 중복** — `UserRestController`·`UserServiceController` 모두 `/api/users` → 혼란·유지보수 위험, 정리 권장.
 - **CORS** — `allowCredentials=true` + `allowedHeaders="*"` → 운영 시 범위 축소 권장 (origin은 명시되어 양호).

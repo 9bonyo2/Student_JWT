@@ -31,7 +31,7 @@
 `SqlInjectionDemoService.searchVulnerable()`:
 
 ```java
-// 🔴 취약 : 입력이 SQL 구문의 일부가 된다
+//  취약 : 입력이 SQL 구문의 일부가 된다
 String sql = "SELECT student_id, name, student_number FROM students "
            + "WHERE name LIKE '%" + name + "%'";
 return jdbcTemplate.queryForList(sql);
@@ -40,7 +40,7 @@ return jdbcTemplate.queryForList(sql);
 `SqlInjectionDemoService.searchSafe()`:
 
 ```java
-// 🟢 안전 : 입력은 '?' 자리에 "값"으로만 전달된다
+//  안전 : 입력은 '?' 자리에 "값"으로만 전달된다
 String sql = "SELECT student_id, name, student_number FROM students WHERE name LIKE ?";
 return jdbcTemplate.queryForList(sql, "%" + name + "%");
 ```
@@ -53,11 +53,11 @@ return jdbcTemplate.queryForList(sql, "%" + name + "%");
 
 | 용도 | 메서드 | URL |
 |---|---|---|
-| 🔴 취약 검색 (JdbcTemplate) | GET | `/api/vuln/sqli/students?name=Alice` |
-| 🟢 안전 검색 (JdbcTemplate) | GET | `/api/vuln/sqli/students-safe?name=Alice` |
+|  취약 검색 (JdbcTemplate) | GET | `/api/vuln/sqli/students?name=Alice` |
+|  안전 검색 (JdbcTemplate) | GET | `/api/vuln/sqli/students-safe?name=Alice` |
 | 실행 SQL 확인 | GET | `/api/vuln/sqli/students/debug?name=...` |
-| 🔴 취약 검색 (JPA 네이티브) | GET | `/api/vuln/sqli/students-jpa?name=Alice` |
-| 🟢 안전 검색 (JPA 네이티브) | GET | `/api/vuln/sqli/students-jpa-safe?name=Alice` |
+|  취약 검색 (JPA 네이티브) | GET | `/api/vuln/sqli/students-jpa?name=Alice` |
+|  안전 검색 (JPA 네이티브) | GET | `/api/vuln/sqli/students-jpa-safe?name=Alice` |
 
 > 실습 편의를 위해 `/api/vuln/**` 는 인증 없이 접근할 수 있도록 열려 있다(`SecurityConfig`).
 
@@ -138,18 +138,18 @@ curl "http://localhost:8080/api/vuln/sqli/students?name=%25%27%20UNION%20SELECT%
 
 | 도구 | 문자열 결합 | 파라미터 바인딩 |
 |---|---|---|
-| JdbcTemplate | 🔴 취약 (`students`) | 🟢 안전 (`students-safe`) |
-| **JPA 네이티브** | 🔴 **취약** (`students-jpa`) | 🟢 안전 (`students-jpa-safe`) |
+| JdbcTemplate |  취약 (`students`) |  안전 (`students-safe`) |
+| **JPA 네이티브** |  **취약** (`students-jpa`) |  안전 (`students-jpa-safe`) |
 
 JPA 취약 코드(`JpaSqlInjectionDemoService`):
 ```java
-// 🔴 JPA 인데도 문자열을 결합하면 동일하게 뚫린다
+//  JPA 인데도 문자열을 결합하면 동일하게 뚫린다
 String sql = "SELECT student_id, name, student_number FROM students "
            + "WHERE name LIKE '%" + name + "%'";
 entityManager.createNativeQuery(sql).getResultList();
 ```
 ```java
-// 🟢 같은 네이티브 쿼리라도 바인딩하면 안전하다
+//  같은 네이티브 쿼리라도 바인딩하면 안전하다
 String sql = "SELECT student_id, name, student_number FROM students WHERE name LIKE :name";
 entityManager.createNativeQuery(sql).setParameter("name", "%" + name + "%").getResultList();
 ```
