@@ -24,7 +24,7 @@
 <!--</body>-->
 <!--</html>-->
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org"
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
       xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout" layout:decorate="layout/default_layout">
 <meta charset="UTF-8">
 <th:block layout:fragment="content">
@@ -63,17 +63,16 @@
             <a href="/users/index-vuln" class="btn btn-outline-danger">⚠️ XSS 데모(취약)</a>
         </div>
 
-        <!-- [교육용] 보안 설정 오류(Security Misconfiguration) 데모 - Actuator 노출 확인
-             health/info 는 누구나 접근 가능(permitAll), 나머지는 ROLE_ADMIN 세션 인증이 있어야 200,
-             없으면 403(AUDIT 로그 기록)이 되는지 직접 눌러서 확인한다. -->
+        <!-- [교육용] 보안 설정 오류(Security Misconfiguration) 데모 - Actuator/Metrics 링크는
+             관리자 전용 페이지(/admin/monitoring)로 분리했다. 이 링크 자체도 ROLE_ADMIN 에게만 보인다. -->
+        <div class="mt-4" sec:authorize="hasAuthority('ROLE_ADMIN')">
+            <a th:href="@{/admin/monitoring}" class="btn btn-outline-dark">⚠️ 관리자 모니터링 (Actuator/Metrics)</a>
+        </div>
+
+        <!-- [교육용] 일반 사용자로 눌러서 403(+ [AUDIT] 로그, access.denied.events 집계)을
+             직접 재현해 보는 링크. /actuator/** 는 ROLE_ADMIN 만 허용되므로 일반 사용자는 거부된다. -->
         <div class="mt-4">
-            <h5>⚠️ 보안 설정 오류 데모 — Actuator 엔드포인트</h5>
-            <ul>
-                <li><a th:href="@{/actuator/health}" target="_blank">/actuator/health</a> (인증 불필요)</li>
-                <li><a th:href="@{/actuator/env}" target="_blank">/actuator/env</a> (ROLE_ADMIN 필요)</li>
-                <li><a th:href="@{/actuator/beans}" target="_blank">/actuator/beans</a> (ROLE_ADMIN 필요)</li>
-                <li><a th:href="@{/actuator/mappings}" target="_blank">/actuator/mappings</a> (ROLE_ADMIN 필요)</li>
-            </ul>
+            <a th:href="@{/actuator/beans}" target="_blank" class="btn btn-outline-warning">⚠️ /actuator/beans 호출해 보기 (관리자가 아니면 403)</a>
         </div>
 
     </div>
