@@ -161,6 +161,14 @@ Actuator가 제공하는 기능을 전부 켜 둘 필요는 없다. **로드밸�
 
 ### 4-4. 안전하게 기능 확장하기 — Micrometer 집계 추가
 
+**Micrometer란?** 애플리케이션 지표(metric)를 측정하기 위한 **벤더 중립 계측(instrumentation) 라이브러리**다. 로깅에 비유하면 SLF4J와 비슷한 위치에 있다 — SLF4J가 "로그를 어디에(콘솔·파일·ELK) 남길지"를 코드에서 분리해 주듯이, Micrometer는 "지표를 어느 모니터링 시스템(Prometheus, Datadog, CloudWatch, New Relic 등)으로 보낼지"를 코드에서 분리해 준다. 코드는 Micrometer의 공통 API(Counter·Gauge·Timer 등)만 호출하고, 실제로 어떤 백엔드로 전송되는지는 클래스패스에 어떤 Micrometer 구현체가 있느냐에 따라 결정된다. Spring Boot Actuator의 `/actuator/metrics`, `/actuator/prometheus` 엔드포인트도 내부적으로 Micrometer를 쓴다.
+
+**`MeterRegistry`의 역할** — Micrometer를 쓸 때 실제로 코드가 주입받아 사용하는 **중심 인터페이스**다. 두 가지 역할을 한다.
+1. **지표(Meter)의 팩토리**: `meterRegistry.counter("auth.events", "result", "success")`처럼 이름과 태그(tag)를 주면, 같은 이름·태그 조합의 `Counter`가 이미 있으면 그걸 반환하고 없으면 새로 만든다. 코드에서 `new Counter(...)`로 직접 생성하지 않는다.
+2. **지표의 저장소/전송 창구**: 등록된 모든 지표 값을 보관하다가, 백엔드로 내보내거나 Actuator가 `/actuator/metrics/{name}`으로 조회할 때 응답한다. Spring Boot가 자동 구성한 `MeterRegistry` 빈(기본은 `SimpleMeterRegistry` 기반의 `CompositeMeterRegistry`)을 그대로 주입받아 쓰면 되고, 별도 설정 없이도 `/actuator/metrics`로 조회할 수 있다.
+
+**태그(tag)의 역할**: `auth.events`라는 지표 이름 하나에 `result=success`/`result=failure` 태그를 붙여 구분한다. 성공용·실패용 지표를 따로 만드는 대신, 같은 이름 아래 차원(dimension)만 다르게 둬서 한 지표를 여러 각도로 조회할 수 있게 하는 것이 Micrometer의 일반적인 설계 방식이다.
+
 노출 범위를 최소화한다고 해서 운영에 필요한 기능까지 포기할 필요는 없다. `SecurityAuditListener`에 `MeterRegistry`를 주입해, 로그인 성공/실패 이벤트를 `auth.events` 카운터(`result=success|failure`)로 집계하도록 확장했다.
 
 ```java
@@ -173,6 +181,29 @@ meterRegistry.counter("auth.events", "result", "failure").increment();
 핵심은 새로 생기는 조회 경로(`/actuator/metrics/auth.events`)가 4-2에서 추가한 `.requestMatchers("/actuator/**").hasAuthority("ROLE_ADMIN")` 규칙을 그대로 적용받는다는 것이다 — `SecurityConfig`는 전혀 건드리지 않았다. 기본 노출 범위(`health,info`)도 그대로 둔 채, 집계값을 실제로 보려면 `ACTUATOR_EXPOSURE=health,info,metrics`로 의도적으로 넓혀야 한다.
 
 > **실측(2026-10-14)**: REST·폼 로그인으로 성공 2건·실패 2건을 발생시킨 뒤 관리자 세션으로 `/actuator/metrics/auth.events`를 조회 — `result=success` → `2`, `result=failure` → `2`. 세션 없이 조회하면 `302`(로그인 페이지로 리다이렉트)로 차단되는 것도 함께 확인했다.
+
+### 4-5. 403 거부도 집계하기 — `access.denied.events`
+
+로그인 실패뿐 아니라 **403(접근 거부)도 같은 방식으로 집계**하도록 확장했다. 다만 403은 발생 지점이 하나가 아니라서, 카운터도 한 곳이 아니라 **세 곳**에 심어야 했다.
+
+| 발생 지점 | 코드 위치 | 태그(`chain=`) |
+|---|---|---|
+| `securityFilterChain`(API) URL 규칙 위반 | `SecurityConfig.auditedAccessDeniedHandler()` | `api` |
+| `formLoginFilterChain`(브라우저) URL 규칙 위반 | `SecurityConfig.auditedHtmlAccessDeniedHandler()` | `browser` |
+| `@PreAuthorize` 메서드 보안 위반 | `DefaultExceptionAdvice`의 `AccessDeniedException` 핸들러 | `api-method` |
+
+세 곳 모두 필요한 이유는 2-3(로그 중복 설명)과 동일한 원리다 — **필터 체인에서 끝나는 403**(`api`/`browser`)은 `DefaultExceptionAdvice`에 도달하지 않고, 반대로 **`@PreAuthorize`에서 걸리는 403**(`api-method`)은 컨트롤러 호출 이후라 `SecurityConfig`가 보지 못한다. 로그만이 아니라 **지표(metric)도 같은 사각지대 문제를 그대로 물려받는다** — 한 곳에만 카운터를 심으면 다른 경로로 들어온 403은 집계에서 빠진다.
+
+```java
+// SecurityConfig
+meterRegistry.counter("access.denied.events", "chain", "api").increment();      // securityFilterChain
+meterRegistry.counter("access.denied.events", "chain", "browser").increment(); // formLoginFilterChain
+
+// DefaultExceptionAdvice
+meterRegistry.counter("access.denied.events", "chain", "api-method").increment(); // @PreAuthorize
+```
+
+**관리자 전용 모니터링 페이지(`/admin/monitoring`)**: 위 지표들과 Actuator 링크를 한 페이지로 모았다. `SecurityConfig`에 `.requestMatchers("/admin/**").hasAuthority("ROLE_ADMIN")`을 별도로 추가해, Actuator 자체의 ROLE_ADMIN 요구와 **무관하게 페이지 자체도 관리자에게만 보이도록** 이중으로 막았다. 일반 사용자용 `/users/index`에는 이 페이지 링크를 숨기는 대신, `/actuator/beans` 링크 하나만 공개로 남겨 **일반 사용자가 직접 눌러 403을 재현**해 볼 수 있게 했다.
 
 ---
 
