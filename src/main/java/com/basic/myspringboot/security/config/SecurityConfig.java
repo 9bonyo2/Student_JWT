@@ -88,7 +88,7 @@ public class SecurityConfig {
         //  - JWT 체인은 Authorization 헤더 기반이라 위에서 csrf.disable() 을 유지한다
         return http
                 //Csrf off
-                //.csrf(csrf -> csrf.disable())
+                .csrf(csrf -> csrf.disable())
                 //Csrf On
                 .csrf(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> {
