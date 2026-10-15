@@ -5,6 +5,8 @@ import com.basic.myspringboot.entity.Student;
 import com.basic.myspringboot.entity.StudentDetail;
 import com.basic.myspringboot.repository.DepartmentRepository;
 import com.basic.myspringboot.repository.StudentRepository;
+import com.basic.myspringboot.security.models.UserInfo;
+import com.basic.myspringboot.security.models.UserInfoRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,14 +18,17 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.List;
 
+// UserInfoInsertRunner(학생 소유자 계정 생성) 가 먼저 실행된 뒤 학생을 생성해야
+// 아래에서 학생과 계정을 1:1로 연결할 수 있다.
 @Component
-@Order(1)
+@Order(2)
 @RequiredArgsConstructor
 @Slf4j
 public class DataInitRunner implements CommandLineRunner {
 
     private final DepartmentRepository departmentRepository;
     private final StudentRepository studentRepository;
+    private final UserInfoRepository userInfoRepository;
 
     @Override
     @Transactional
@@ -88,46 +93,46 @@ public class DataInitRunner implements CommandLineRunner {
         Student student1 = createStudentWithDetail(
                 "Alice Johnson", "CS001", cs,
                 "123 Tech Street", "010-1234-5678", "alice@example.com",
-                LocalDate.of(1998, 3, 15)
+                LocalDate.of(1998, 3, 15), "cs001@aa.com"
         );
 
         Student student2 = createStudentWithDetail(
                 "Bob Smith", "CS002", cs,
                 "456 Code Avenue", "010-2345-6789", "bob@example.com",
-                LocalDate.of(1997, 7, 22)
+                LocalDate.of(1997, 7, 22), "cs002@aa.com"
         );
 
         // Electrical Engineering students
         Student student3 = createStudentWithDetail(
                 "Charlie Brown", "EE001", ee,
                 "789 Circuit Lane", "010-3456-7890", "charlie@example.com",
-                LocalDate.of(1999, 11, 8)
+                LocalDate.of(1999, 11, 8), "ee001@aa.com"
         );
 
         Student student4 = createStudentWithDetail(
                 "Diana Wilson", "EE002", ee,
                 "321 Power Street", "010-4567-8901", "diana@example.com",
-                LocalDate.of(1998, 5, 30)
+                LocalDate.of(1998, 5, 30), "ee002@aa.com"
         );
 
         // Mechanical Engineering students
         Student student5 = createStudentWithDetail(
                 "Edward Davis", "ME001", me,
                 "654 Engine Road", "010-5678-9012", "edward@example.com",
-                LocalDate.of(1997, 12, 12)
+                LocalDate.of(1997, 12, 12), "me001@aa.com"
         );
 
         // Business Administration students
         Student student6 = createStudentWithDetail(
                 "Fiona Garcia", "BA001", ba,
                 "987 Business Plaza", "010-6789-0123", "fiona@example.com",
-                LocalDate.of(1999, 2, 28)
+                LocalDate.of(1999, 2, 28), "ba001@aa.com"
         );
 
         Student student7 = createStudentWithDetail(
                 "George Martinez", "BA002", ba,
                 "147 Commerce Street", "010-7890-1234", "george@example.com",
-                LocalDate.of(1998, 9, 10)
+                LocalDate.of(1998, 9, 10), "ba002@aa.com"
         );
 
         // Student without detail (Computer Science)
@@ -149,6 +154,7 @@ public class DataInitRunner implements CommandLineRunner {
                 .studentNumber("CS003")
                 .studentDetail(detail8)
                 .department(cs)
+                .userInfo(findOwner("cs003@aa.com"))
                 .build();
 
         detail8.setStudent(student8);
@@ -161,7 +167,8 @@ public class DataInitRunner implements CommandLineRunner {
     }
 
     private Student createStudentWithDetail(String name, String studentNumber, Department department,
-                                         String address, String phoneNumber, String email, LocalDate dateOfBirth) {
+                                         String address, String phoneNumber, String email, LocalDate dateOfBirth,
+                                         String ownerEmail) {
         StudentDetail detail = StudentDetail.builder()
                 .address(address)
                 .phoneNumber(phoneNumber)
@@ -174,9 +181,18 @@ public class DataInitRunner implements CommandLineRunner {
                 .studentNumber(studentNumber)
                 .department(department)
                 .studentDetail(detail)
+                //학생 본인 소유 계정을 연결한다 ( 단건 조회 소유권 검사용 )
+                .userInfo(findOwner(ownerEmail))
                 .build();
 
         detail.setStudent(student);
         return student;
+    }
+
+    // UserInfoInsertRunner 가 미리 생성해 둔 학생 소유자 계정을 조회한다
+    private UserInfo findOwner(String email) {
+        return userInfoRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalStateException(
+                        "학생 소유자 계정을 찾을 수 없습니다(UserInfoInsertRunner 실행 순서 확인 필요): " + email));
     }
 }

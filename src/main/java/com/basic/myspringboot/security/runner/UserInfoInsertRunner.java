@@ -45,7 +45,30 @@ public class UserInfoInsertRunner implements ApplicationRunner {
         userInfo2.setEmail("user@aa.com");
         userInfo2.setRoles("ROLE_USER");
 
+        // 학생 단건 조회(IDOR 방지) 소유권 데모용 계정 : 학생 수만큼 생성해 DataInitRunner 가 학생과 1:1로 연결한다.
+        // user@aa.com 은 의도적으로 제외해, "자신이 등록한 학생이 없는 일반 사용자" 역할(타인 조회 시 403)을 보여준다.
+        List<UserInfo> studentOwners = List.of(
+                createStudentOwner("alice", "cs001@aa.com"),
+                createStudentOwner("bob", "cs002@aa.com"),
+                createStudentOwner("charlie", "ee001@aa.com"),
+                createStudentOwner("diana", "ee002@aa.com"),
+                createStudentOwner("edward", "me001@aa.com"),
+                createStudentOwner("fiona", "ba001@aa.com"),
+                createStudentOwner("george", "ba002@aa.com"),
+                createStudentOwner("helen", "cs003@aa.com")
+        );
+
         userInfoRepository.saveAll(List.of(userInfo, userInfo2));
-        log.info("실습용 계정 2개를 생성했습니다 ( admin@aa.com / user@aa.com )");
+        userInfoRepository.saveAll(studentOwners);
+        log.info("실습용 계정 2개(admin@aa.com / user@aa.com) + 학생 소유자 계정 {}개를 생성했습니다", studentOwners.size());
+    }
+
+    private UserInfo createStudentOwner(String name, String email) {
+        UserInfo userInfo = new UserInfo();
+        userInfo.setName(name);
+        userInfo.setPassword(passwordEncoder.encode("pwd1234"));
+        userInfo.setEmail(email);
+        userInfo.setRoles("ROLE_USER");
+        return userInfo;
     }
 }
