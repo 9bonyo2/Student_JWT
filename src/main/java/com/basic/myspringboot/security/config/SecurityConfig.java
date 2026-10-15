@@ -2,8 +2,10 @@ package com.basic.myspringboot.security.config;
 
 import com.basic.myspringboot.security.jwt.JwtAuthenticationFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -37,6 +39,7 @@ import java.util.Map;
 @EnableWebSecurity
 @EnableMethodSecurity
 @RequiredArgsConstructor
+@Slf4j
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -123,16 +126,36 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 
-    /** 토큰이 없거나 잘못된 경우 : 401 */
+    /**
+     * 토큰이 없거나 잘못된 경우 : 401
+     * ( 이 처리는 DispatcherServlet 이전의 Security 필터 체인에서 끝나므로
+     *   @RestControllerAdvice 의 AuthenticationException 핸들러는 호출되지 않는다.
+     *   그래서 [AUDIT] 로그를 이 자리에서 직접 남긴다. )
+     */
     private AuthenticationEntryPoint authenticationEntryPoint() {
-        return (request, response, authException) ->
-                writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "인증이 필요합니다 ( 유효한 토큰이 없습니다 )");
+        return (request, response, authException) -> {
+            log.warn("[AUDIT] 인증 실패(401) - {} {} from {} : {}",
+                    request.getMethod(), request.getRequestURI(), clientIp(request), authException.getMessage());
+            writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "인증이 필요합니다 ( 유효한 토큰이 없습니다 )");
+        };
     }
 
     /** 로그인은 했지만 권한이 부족한 경우 : 403 */
     private AccessDeniedHandler accessDeniedHandler() {
         return (request, response, accessDeniedException) ->
                 writeError(response, HttpServletResponse.SC_FORBIDDEN, "접근 권한이 없습니다");
+    }
+
+    /**
+     * 클라이언트 IP 추출. 프록시 뒤라면 X-Forwarded-For 의 첫 IP 를 사용한다.
+     * ( 감사 로그에 출처를 남기기 위한 용도 )
+     */
+    private String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 
     private void writeError(HttpServletResponse response, int status, String message)
