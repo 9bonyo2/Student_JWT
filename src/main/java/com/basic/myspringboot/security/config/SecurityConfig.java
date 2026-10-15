@@ -21,6 +21,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import java.time.LocalDateTime;
@@ -76,7 +77,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(authenticationEntryPoint())
-                        .accessDeniedHandler(accessDeniedHandler()))
+                        .accessDeniedHandler(auditedAccessDeniedHandler()))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
@@ -117,6 +118,13 @@ public class SecurityConfig {
                         .deleteCookies("JSESSIONID")
                         .logoutSuccessUrl("/")
                 )
+                //[로깅 하드닝] 이 체인은 기존에 exceptionHandling 이 없어 401/403 이 Spring Security
+                //기본 처리로 빠지며 [AUDIT] 로그가 전혀 남지 않았다. 403 은 API 체인과 핸들러를
+                //공유하고, 401(미인증) 은 기존 로그인 페이지 리다이렉트 동작은 그대로 유지한 채
+                //로그만 추가한다.
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(auditedLoginEntryPoint())
+                        .accessDeniedHandler(auditedAccessDeniedHandler()))
                 .build();
     }
 
@@ -140,10 +148,35 @@ public class SecurityConfig {
         };
     }
 
-    /** 로그인은 했지만 권한이 부족한 경우 : 403 */
-    private AccessDeniedHandler accessDeniedHandler() {
-        return (request, response, accessDeniedException) ->
-                writeError(response, HttpServletResponse.SC_FORBIDDEN, "접근 권한이 없습니다");
+    /**
+     * 폼 로그인 체인에서 미인증 상태로 보호된 경로에 접근한 경우.
+     * ( 세션 기반이라 실제 응답은 401 이 아니라 /login 으로의 리다이렉트이지만,
+     *   원인은 401 과 동일하게 "인증이 안 된 상태로 접근"이므로 같은 [AUDIT] 태그로 남긴다.
+     *   응답 자체는 기존 LoginUrlAuthenticationEntryPoint 에 위임해 로그인 페이지로
+     *   리다이렉트하는 동작을 그대로 유지한다. )
+     */
+    private AuthenticationEntryPoint auditedLoginEntryPoint() {
+        AuthenticationEntryPoint redirectToLogin = new LoginUrlAuthenticationEntryPoint("/login");
+        return (request, response, authException) -> {
+            log.warn("[AUDIT] 인증 실패(401) - {} {} from {} : {}",
+                    request.getMethod(), request.getRequestURI(), clientIp(request), authException.getMessage());
+            redirectToLogin.commence(request, response, authException);
+        };
+    }
+
+    /**
+     * 로그인은 했지만 권한이 부족한 경우 : 403.
+     * ( 401 과 같은 이유로 필터 체인 단계에서 끝나 @RestControllerAdvice 가 호출되지
+     *   않으므로, [AUDIT] 로그를 이 자리에서 직접 남긴다. API 체인과 폼 로그인 체인이
+     *   공유해서 쓴다. )
+     */
+    private AccessDeniedHandler auditedAccessDeniedHandler() {
+        return (request, response, accessDeniedException) -> {
+            log.warn("[AUDIT] 접근 거부(403) - {} {} from {} : {}",
+                    request.getMethod(), request.getRequestURI(), clientIp(request),
+                    accessDeniedException.getMessage());
+            writeError(response, HttpServletResponse.SC_FORBIDDEN, "접근 권한이 없습니다");
+        };
     }
 
     /**
