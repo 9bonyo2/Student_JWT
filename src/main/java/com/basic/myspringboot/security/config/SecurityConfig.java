@@ -124,7 +124,7 @@ public class SecurityConfig {
                 //로그만 추가한다.
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(auditedLoginEntryPoint())
-                        .accessDeniedHandler(auditedAccessDeniedHandler()))
+                        .accessDeniedHandler(auditedHtmlAccessDeniedHandler()))
                 .build();
     }
 
@@ -165,10 +165,10 @@ public class SecurityConfig {
     }
 
     /**
-     * 로그인은 했지만 권한이 부족한 경우 : 403.
+     * 로그인은 했지만 권한이 부족한 경우 : 403 (REST API 체인 전용).
      * ( 401 과 같은 이유로 필터 체인 단계에서 끝나 @RestControllerAdvice 가 호출되지
-     *   않으므로, [AUDIT] 로그를 이 자리에서 직접 남긴다. API 체인과 폼 로그인 체인이
-     *   공유해서 쓴다. )
+     *   않으므로, [AUDIT] 로그를 이 자리에서 직접 남긴다. 브라우저용 응답은
+     *   auditedHtmlAccessDeniedHandler() 를 따로 둔다 — API 는 JSON, 브라우저는 에러 페이지. )
      */
     private AccessDeniedHandler auditedAccessDeniedHandler() {
         return (request, response, accessDeniedException) -> {
@@ -176,6 +176,22 @@ public class SecurityConfig {
                     request.getMethod(), request.getRequestURI(), clientIp(request),
                     accessDeniedException.getMessage());
             writeError(response, HttpServletResponse.SC_FORBIDDEN, "접근 권한이 없습니다");
+        };
+    }
+
+    /**
+     * 폼 로그인 체인(브라우저)에서 권한 부족으로 접근이 거부된 경우 : 403.
+     * ( API 체인과 달리 JSON 이 아니라 templates/error/403.html 을 보여준다.
+     *   response.sendError() 를 호출하면 서블릿 컨테이너가 /error 로 포워드하고,
+     *   Spring Boot 의 BasicErrorController/DefaultErrorViewResolver 가 그 뷰를 찾아
+     *   렌더링한다. templates 에 있으므로 Thymeleaf 레이아웃(헤더·네비바·푸터)이 그대로 적용된다. )
+     */
+    private AccessDeniedHandler auditedHtmlAccessDeniedHandler() {
+        return (request, response, accessDeniedException) -> {
+            log.warn("[AUDIT] 접근 거부(403) - {} {} from {} : {}",
+                    request.getMethod(), request.getRequestURI(), clientIp(request),
+                    accessDeniedException.getMessage());
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "접근 권한이 없습니다");
         };
     }
 

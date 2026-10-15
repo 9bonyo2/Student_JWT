@@ -24,6 +24,11 @@
             </form>
           </div>
         </div>
+        <!-- [교육용] 보안 설정 오류(Security Misconfiguration) 데모
+             health 는 permitAll 이라 로그인 없이도 열린다. -->
+        <div class="text-center mt-3">
+          <a th:href="@{/actuator/health}" target="_blank">⚠️ /actuator/health (인증 불필요)</a>
+        </div>
       </div>
     </div>
   </div>

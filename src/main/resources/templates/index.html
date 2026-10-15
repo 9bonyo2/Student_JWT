@@ -63,6 +63,19 @@
             <a href="/users/index-vuln" class="btn btn-outline-danger">⚠️ XSS 데모(취약)</a>
         </div>
 
+        <!-- [교육용] 보안 설정 오류(Security Misconfiguration) 데모 - Actuator 노출 확인
+             health/info 는 누구나 접근 가능(permitAll), 나머지는 ROLE_ADMIN 세션 인증이 있어야 200,
+             없으면 403(AUDIT 로그 기록)이 되는지 직접 눌러서 확인한다. -->
+        <div class="mt-4">
+            <h5>⚠️ 보안 설정 오류 데모 — Actuator 엔드포인트</h5>
+            <ul>
+                <li><a th:href="@{/actuator/health}" target="_blank">/actuator/health</a> (인증 불필요)</li>
+                <li><a th:href="@{/actuator/env}" target="_blank">/actuator/env</a> (ROLE_ADMIN 필요)</li>
+                <li><a th:href="@{/actuator/beans}" target="_blank">/actuator/beans</a> (ROLE_ADMIN 필요)</li>
+                <li><a th:href="@{/actuator/mappings}" target="_blank">/actuator/mappings</a> (ROLE_ADMIN 필요)</li>
+            </ul>
+        </div>
+
     </div>
 </th:block>
 </html>
