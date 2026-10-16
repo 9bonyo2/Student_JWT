@@ -18,9 +18,12 @@ import java.time.Instant;
  * 같은 계정에 비밀번호를 연속으로 틀리면(Burp Intruder 같은 자동화 도구로 반복 요청하는 경우 포함)
  * 일정 횟수 이후 계정을 일정 시간 잠가, 무차별 대입(brute force) 공격의 성공 확률을 낮춘다.
  *
- * 흐름: UserInfoController.login() 이
- *   1) assertNotLocked(email) 로 먼저 잠금 여부를 확인하고 (잠겨 있으면 비밀번호 검증 없이 즉시 거부)
- *   2) authenticationManager.authenticate(...) 실패 시 onFailure(email), 성공 시 onSuccess(email) 를 호출한다.
+ * 흐름: 폼 로그인(/login-process)과 REST 로그인(/api/userinfos/login) 모두 AuthenticationManager 를
+ * 거치므로, 공통 지점에 걸어 두 경로에 동일하게 적용한다.
+ *   1) UserInfoUserDetailsService.loadUserByUsername() 이 비밀번호 검증 전에
+ *      assertNotLocked(email) 로 잠금 여부를 확인한다 (잠겨 있으면 즉시 거부).
+ *   2) SecurityAuditListener 가 AuthenticationSuccessEvent/AbstractAuthenticationFailureEvent 를
+ *      받아 onSuccess(email)/onFailure(email) 를 호출한다.
  */
 @Service
 @RequiredArgsConstructor

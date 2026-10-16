@@ -6,12 +6,10 @@ import com.basic.myspringboot.security.controller.dto.RefreshRequest;
 import com.basic.myspringboot.security.controller.dto.SignUpRequest;
 import com.basic.myspringboot.security.controller.dto.UserInfoResponse;
 import com.basic.myspringboot.security.models.UserInfoUserDetails;
-import com.basic.myspringboot.security.service.LoginAttemptService;
 import com.basic.myspringboot.security.service.RefreshTokenService;
 import com.basic.myspringboot.security.service.RefreshTokenService.IssuedToken;
 import com.basic.myspringboot.security.service.UserInfoUserDetailsService;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.basic.myspringboot.security.jwt.JwtService;
 import com.basic.myspringboot.security.models.UserInfo;
@@ -39,7 +37,6 @@ public class UserInfoController {
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final UserInfoUserDetailsService userDetailsService;
-    private final LoginAttemptService loginAttemptService;
 
     @GetMapping("/welcome")
     public String welcome() {
@@ -72,29 +69,21 @@ public class UserInfoController {
      * 로그인. 인증에 실패하면 AuthenticationException 이 발생하고
      * DefaultExceptionAdvice 가 401 로 응답한다.
      *
-     * [로그인 시도 제한 - bruteforce-demo] 비밀번호 검증 전에 먼저 잠금 여부를 확인하고,
-     * 인증 성공/실패에 따라 실패 횟수를 초기화하거나 누적한다(임계치 초과 시 계정 잠금).
+     * [로그인 시도 제한 - bruteforce-demo] 잠금 확인(assertNotLocked)은 공통 지점인
+     * UserInfoUserDetailsService.loadUserByUsername() 에서, 실패/성공 누적(onFailure/onSuccess)은
+     * SecurityAuditListener 의 인증 이벤트 리스너에서 처리한다 - 둘 다 AuthenticationManager 를
+     * 거치면 공통으로 실행되므로, 폼 로그인(/login-process)과 REST 로그인(여기)이 같은 로직을 공유한다.
      */
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> authenticateAndGetToken(@Valid @RequestBody AuthRequest authRequest) {
-        //이미 잠긴 계정이면 비밀번호 검증 없이 즉시 거부한다
-        loginAttemptService.assertNotLocked(authRequest.getEmail());
-
-        Authentication authentication;
-        try {
-            authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(
-                            authRequest.getEmail(),
-                            authRequest.getPassword()
-                    ));
-        } catch (AuthenticationException e) {
-            loginAttemptService.onFailure(authRequest.getEmail());
-            throw e;
-        }
+        Authentication authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(
+                        authRequest.getEmail(),
+                        authRequest.getPassword()
+                ));
 
         //인증에 성공하면 principal 에 UserInfoUserDetails 가 들어 있다
         UserInfoUserDetails userDetails = (UserInfoUserDetails) authentication.getPrincipal();
-        loginAttemptService.onSuccess(authRequest.getEmail());
         //[JWT 하드닝] 토큰 subject 로 email(PII) 대신 불투명 식별자(uuid)를 넣는다
         String accessToken = jwtService.generateToken(userDetails.getUuid());
         //[2단계] 로그인 시 refresh 토큰도 발급(서버 저장) → 짧은 access 만료 후 재발급에 사용

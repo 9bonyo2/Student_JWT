@@ -1,9 +1,11 @@
 package com.basic.myspringboot.security.logging;
 
+import com.basic.myspringboot.security.service.LoginAttemptService;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.event.AbstractAuthenticationFailureEvent;
 import org.springframework.security.authentication.event.AuthenticationSuccessEvent;
 import org.springframework.stereotype.Component;
@@ -23,6 +25,10 @@ import org.springframework.stereotype.Component;
  * Micrometer 집계: 로그와 별개로 auth.events 카운터(result=success|failure)를 남긴다.
  * /actuator/metrics/auth.events 로 조회하며, 이 엔드포인트는 /actuator/** 에 걸린
  * ROLE_ADMIN 인증 요구를 그대로 적용받는다(SecurityConfig 수정 불필요).
+ *
+ * [로그인 시도 제한 - bruteforce-demo] 폼 로그인(/login-process)과 REST 로그인(/api/userinfos/login)
+ * 모두 이 이벤트를 거치므로, LoginAttemptService.onSuccess/onFailure 도 여기 한 곳에서 호출해
+ * 두 경로 모두 동일하게 실패 횟수를 누적·초기화한다.
  */
 @Component
 @Slf4j
@@ -30,6 +36,7 @@ import org.springframework.stereotype.Component;
 public class SecurityAuditListener {
 
     private final MeterRegistry meterRegistry;
+    private final LoginAttemptService loginAttemptService;
 
     /** 로그인 성공 */
     @EventListener
@@ -37,6 +44,7 @@ public class SecurityAuditListener {
         String user = event.getAuthentication().getName();
         log.info("[AUDIT] 로그인 성공 - user={}", mask(user));
         meterRegistry.counter("auth.events", "result", "success").increment();
+        loginAttemptService.onSuccess(user);
     }
 
     /**
@@ -49,6 +57,12 @@ public class SecurityAuditListener {
         String reason = event.getException().getClass().getSimpleName();
         log.warn("[AUDIT] 로그인 실패 - user={}, reason={}", mask(user), reason);
         meterRegistry.counter("auth.events", "result", "failure").increment();
+        //이미 잠긴 계정에 대한 재시도(LockedException)는 실패 횟수를 추가로 누적하지 않는다.
+        //UserInfoUserDetailsService.assertNotLocked() 에서 비밀번호 검증 전에 걸러진 거부일 뿐,
+        //새로운 비밀번호 실패가 아니기 때문이다(그대로 누적하면 잠금이 계속 연장된다).
+        if (!(event.getException() instanceof LockedException)) {
+            loginAttemptService.onFailure(user);
+        }
     }
 
     /**
