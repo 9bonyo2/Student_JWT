@@ -130,6 +130,8 @@ login.lockout.duration-seconds=300
 ```
 
 > **왜 이 지점(컨트롤러)에서 막았나**: `UserDetails.isAccountNonLocked()`를 오버라이드해 Spring Security의 내부 `LockedException`에 맡기는 방법도 있지만, 그 경로는 메시지가 영문 고정값이고 "몇 초 후 재시도"같은 정보를 줄 수 없다. 대신 `authenticationManager.authenticate(...)` 호출 **앞뒤**를 직접 감싸서, 잠금 여부를 비밀번호 검증 전에 먼저 확인하고(불필요한 해시 비교를 생략), 실패/성공 결과에 따라 직접 카운트를 갱신한다 — 흐름이 컨트롤러 한 곳에 보여서 교육용으로 추적하기 쉽다.
+>
+> **업데이트(§2-4 참고)**: 이 설계는 `UserInfoController.login()`(REST)에만 적용되어, 화면 로그인(`/login-process`)에는 잠금 확인도 실패/성공 집계도 전혀 적용되지 않는 사각지대가 있었다. 이후 두 경로의 공통 지점으로 위치를 옮겼다.
 
 ### 2-3. 변경/추가 파일 한눈에 보기
 
@@ -137,8 +139,80 @@ login.lockout.duration-seconds=300
 |---|---|---|
 | `UserInfo` | 수정 | `failedLoginCount`, `lockedUntil` 필드 추가 |
 | `LoginAttemptService` | 추가 | 잠금 확인(`assertNotLocked`)·실패 누적(`onFailure`)·성공 초기화(`onSuccess`) |
-| `UserInfoController` | 수정 | `login()`에서 잠금 확인 → 인증 시도 → 성공/실패에 따라 `LoginAttemptService` 호출 |
+| `UserInfoController` | 수정(§2-2), 이후 축소(§2-4) | `login()`에서 잠금 확인 → 인증 시도 → 성공/실패에 따라 `LoginAttemptService` 호출 (→ §2-4에서 공통 지점으로 이동 후 제거) |
 | `application.properties` | 수정 | `login.lockout.max-attempts=5`, `login.lockout.duration-seconds=300` 추가 |
+
+---
+
+### 2-4. 화면 로그인(`/login-process`)엔 적용되지 않던 문제와 수정 — 공통 지점으로 이동
+
+§2-2의 구현은 `UserInfoController.login()`(REST, `/api/userinfos/login`) **안에만** `assertNotLocked`/`onFailure`/`onSuccess`를 명시적으로 호출했다. 그런데 화면 로그인은 `SecurityConfig`의 `formLoginFilterChain`에 설정된 Spring Security 기본 `formLogin(...)`(`/login-process`)이 처리하며, `UserInfoController.login()`을 전혀 거치지 않는다. 그 결과:
+
+- 화면에서 비밀번호를 틀려도 `failed_login_count`가 **전혀 증가하지 않았다**.
+- 계정이 이미 잠긴 상태에서도 화면 로그인은 **잠금 확인 자체를 우회**했다 — 비밀번호만 맞으면 그대로 로그인됐다.
+
+**수정 방향**: 폼 로그인·REST 로그인 모두 결국 `AuthenticationManager` → `DaoAuthenticationProvider`를 공통으로 거친다는 점을 이용해, 잠금 확인과 성공/실패 처리를 컨트롤러가 아니라 그 공통 지점으로 옮겼다.
+
+```java
+// UserInfoUserDetailsService.loadUserByUsername()
+// - DaoAuthenticationProvider 가 비밀번호 검증 전에 호출하는 지점이라
+//   폼 로그인/REST 로그인 모두 공통으로 거친다.
+@Override
+public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+    loginAttemptService.assertNotLocked(username);
+    Optional<UserInfo> optionalUserInfo = repository.findByEmail(username);
+    return optionalUserInfo.map(UserInfoUserDetails::new)
+            .orElseThrow(() -> new UsernameNotFoundException("user not found " + username));
+}
+```
+
+```java
+// SecurityAuditListener
+// - 두 로그인 경로 모두 AuthenticationManager 가 발행하는 이벤트를 공통으로 받는 지점이다(04_Logging_Hardening.md §2-1 참고).
+@EventListener
+public void onAuthenticationSuccess(AuthenticationSuccessEvent event) {
+    String user = event.getAuthentication().getName();
+    log.info("[AUDIT] 로그인 성공 - user={}", mask(user));
+    loginAttemptService.onSuccess(user);
+}
+
+@EventListener
+public void onAuthenticationFailure(AbstractAuthenticationFailureEvent event) {
+    String user = String.valueOf(event.getAuthentication().getName());
+    log.warn("[AUDIT] 로그인 실패 - user={}, reason={}", mask(user), event.getException().getClass().getSimpleName());
+    //이미 잠긴 계정에 대한 재시도(LockedException)는 실패 횟수를 추가로 누적하지 않는다 —
+    //assertNotLocked() 에서 비밀번호 검증 전에 걸러진 거부일 뿐 새로운 비밀번호 실패가 아니며,
+    //그대로 누적하면 재시도할 때마다 잠금이 계속 연장된다.
+    if (!(event.getException() instanceof LockedException)) {
+        loginAttemptService.onFailure(user);
+    }
+}
+```
+
+**왜 `LockedException`은 제외하는가**: `assertNotLocked()`가 이제 `authenticate()` 호출 경로(`loadUserByUsername`) 안에서 실행되므로, 이미 잠긴 계정이 다시 시도하면 그 `LockedException`도 `AbstractAuthenticationFailureEvent`로 발행된다. 이걸 그대로 `onFailure()`로 넘기면 "이미 잠긴 계정에 대한 거부"가 "새로운 비밀번호 실패"처럼 처리되어 매 재시도마다 `failed_login_count`가 더 쌓이고 `lockedUntil`이 계속 뒤로 밀린다 — 그래서 명시적으로 제외했다.
+
+**`UserInfoController.login()`**: 위 두 곳으로 공통화되어, 더 이상 `LoginAttemptService`를 직접 호출하지 않는다(§2-2의 코드는 이 수정 이전 버전).
+
+```java
+@PostMapping("/login")
+public ResponseEntity<AuthResponse> authenticateAndGetToken(@Valid @RequestBody AuthRequest authRequest) {
+    Authentication authentication = authenticationManager.authenticate(
+            new UsernamePasswordAuthenticationToken(
+                    authRequest.getEmail(), authRequest.getPassword()));
+    UserInfoUserDetails userDetails = (UserInfoUserDetails) authentication.getPrincipal();
+    // ... 이후 토큰 발급은 기존과 동일 (잠금 확인·카운트 갱신은 공통 지점에서 이미 처리됨)
+}
+```
+
+#### 실측 검증
+
+`cs001@aa.com`(잠기지 않은 상태, `failed_login_count=0`)으로 화면 로그인 폼(`/login-process`)에 틀린 비밀번호를 한 번 제출:
+
+| 호출 전 | 호출 | 호출 후 |
+|---|---|---|
+| `failed_login_count=0`, `locked_until=NULL` | `POST /login-process` (틀린 비밀번호, CSRF 토큰 포함) → `302 /login?error` | `failed_login_count=1`, `locked_until=NULL` |
+
+수정 전에는 이 테이블의 "호출 후" 값이 "호출 전"과 동일(`0`, 증가 없음)했다 — 화면 로그인이 `LoginAttemptService`를 전혀 거치지 않았기 때문이다.
 
 ---
 
