@@ -153,6 +153,8 @@ login.lockout.duration-seconds=300
 
 **수정 방향**: 폼 로그인·REST 로그인 모두 결국 `AuthenticationManager` → `DaoAuthenticationProvider`를 공통으로 거친다는 점을 이용해, 잠금 확인과 성공/실패 처리를 컨트롤러가 아니라 그 공통 지점으로 옮겼다.
 
+**`UserInfoUserDetailsService.java`**
+
 ```java
 // UserInfoUserDetailsService.loadUserByUsername()
 // - DaoAuthenticationProvider 가 비밀번호 검증 전에 호출하는 지점이라
@@ -165,6 +167,8 @@ public UserDetails loadUserByUsername(String username) throws UsernameNotFoundEx
             .orElseThrow(() -> new UsernameNotFoundException("user not found " + username));
 }
 ```
+
+**`SecurityAuditListener.java`**
 
 ```java
 // SecurityAuditListener
