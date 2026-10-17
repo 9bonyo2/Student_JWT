@@ -2,6 +2,7 @@ package com.basic.myspringboot.security.config;
 
 import com.basic.myspringboot.security.jwt.JwtAuthenticationFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +46,7 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final ObjectMapper objectMapper;
+    private final MeterRegistry meterRegistry;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -97,6 +99,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers("/login/**").permitAll()
                             .requestMatchers("/users/**").authenticated()
+                            //[보안 설정 오류 하드닝] (OWASP #2) Actuator/Metrics 링크 모음 페이지.
+                            //Actuator 자체의 ROLE_ADMIN 요구와는 별개로, 페이지 자체도 관리자만 보이게 막는다.
+                            .requestMatchers("/admin/**").hasAuthority("ROLE_ADMIN")
                             //[보안 설정 오류 하드닝] (OWASP #2) Actuator는 노출 범위(exposure.include)를
                             //최소화해도, 혹시 나중에 다시 넓어질 경우를 대비해 인증을 한 겹 더 요구한다.
                             //헬스체크는 로드밸런서 등 외부 도구가 인증 없이 호출해야 하므로 예외로 둔다.
@@ -118,6 +123,22 @@ public class SecurityConfig {
                         .deleteCookies("JSESSIONID")
                         .logoutSuccessUrl("/")
                 )
+                //[CSP 하드닝] (OWASP XSS 방어) Thymeleaf 화면(이 체인)에만 적용한다.
+                //  - script-src 'self' + cdn.jsdelivr.net : Bootstrap JS 는 CDN에서, 그 외 스크립트는 같은 출처에서만 허용
+                //  - index-vuln.html 은 th:utext 로 사용자 입력을 그대로 렌더링하는 Stored XSS 데모 페이지이지만,
+                //    CSP 가 있으면 주입된 <script> 가 응답 HTML에 그려져도 'self' 가 아니라서 브라우저가 실행을 차단한다
+                //    (= 애플리케이션 코드의 결함과는 별개로 동작하는 심층 방어 계층)
+                //  - inline onsubmit/style 은 모두 제거하고 외부 js/css 로 옮겼으므로 'unsafe-inline' 이 필요 없다
+                .headers(headers -> headers
+                        .contentSecurityPolicy(csp -> csp
+                                .policyDirectives(
+                                        "default-src 'self'; "
+                                                + "script-src 'self' https://cdn.jsdelivr.net; "
+                                                + "style-src 'self' https://cdn.jsdelivr.net; "
+                                                + "img-src 'self'; "
+                                                + "object-src 'none'; "
+                                                + "base-uri 'self'; "
+                                                + "frame-ancestors 'self'")))
                 //[로깅 하드닝] 이 체인은 기존에 exceptionHandling 이 없어 401/403 이 Spring Security
                 //기본 처리로 빠지며 [AUDIT] 로그가 전혀 남지 않았다. 401(미인증) 은 기존 로그인 페이지
                 //리다이렉트 동작은 그대로 유지한 채 로그만 추가한다. 403(권한 부족)은 API 체인과 달리
@@ -168,13 +189,15 @@ public class SecurityConfig {
      * 로그인은 했지만 권한이 부족한 경우 : 403 (REST API 체인 전용).
      * ( 401 과 같은 이유로 필터 체인 단계에서 끝나 @RestControllerAdvice 가 호출되지
      *   않으므로, [AUDIT] 로그를 이 자리에서 직접 남긴다. 브라우저용 응답은
-     *   auditedHtmlAccessDeniedHandler() 를 따로 둔다 — API 는 JSON, 브라우저는 에러 페이지. )
+     *   auditedHtmlAccessDeniedHandler() 를 따로 둔다 — API 는 JSON, 브라우저는 에러 페이지.
+     *   access.denied.events 카운터(chain=api)로도 집계해 /actuator/metrics 로 조회할 수 있게 한다. )
      */
     private AccessDeniedHandler auditedAccessDeniedHandler() {
         return (request, response, accessDeniedException) -> {
             log.warn("[AUDIT] 접근 거부(403) - {} {} from {} : {}",
                     request.getMethod(), request.getRequestURI(), clientIp(request),
                     accessDeniedException.getMessage());
+            meterRegistry.counter("access.denied.events", "chain", "api").increment();
             writeError(response, HttpServletResponse.SC_FORBIDDEN, "접근 권한이 없습니다");
         };
     }
@@ -184,13 +207,15 @@ public class SecurityConfig {
      * ( API 체인과 달리 JSON 이 아니라 templates/error/403.html 을 보여준다.
      *   response.sendError() 를 호출하면 서블릿 컨테이너가 /error 로 포워드하고,
      *   Spring Boot 의 BasicErrorController/DefaultErrorViewResolver 가 그 뷰를 찾아
-     *   렌더링한다. templates 에 있으므로 Thymeleaf 레이아웃(헤더·네비바·푸터)이 그대로 적용된다. )
+     *   렌더링한다. templates 에 있으므로 Thymeleaf 레이아웃(헤더·네비바·푸터)이 그대로 적용된다.
+     *   access.denied.events 카운터(chain=browser)로도 집계한다. )
      */
     private AccessDeniedHandler auditedHtmlAccessDeniedHandler() {
         return (request, response, accessDeniedException) -> {
             log.warn("[AUDIT] 접근 거부(403) - {} {} from {} : {}",
                     request.getMethod(), request.getRequestURI(), clientIp(request),
                     accessDeniedException.getMessage());
+            meterRegistry.counter("access.denied.events", "chain", "browser").increment();
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "접근 권한이 없습니다");
         };
     }

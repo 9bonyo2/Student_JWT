@@ -1,9 +1,11 @@
 package com.basic.myspringboot.exception.advice;
 
 import com.basic.myspringboot.exception.BusinessException;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -23,7 +25,10 @@ import java.util.Map;
 
 @RestControllerAdvice
 @Slf4j
+@RequiredArgsConstructor
 public class DefaultExceptionAdvice {
+
+    private final MeterRegistry meterRegistry;
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorObject> handleResourceNotFoundException(BusinessException ex) {
@@ -80,6 +85,9 @@ public class DefaultExceptionAdvice {
     }
 
     //권한 부족 ( @PreAuthorize 통과 실패 ) : 403
+    //( 이 403은 필터 체인이 아니라 컨트롤러 메서드 호출 시점(@PreAuthorize)에 발생하므로
+    //  SecurityConfig 의 auditedAccessDeniedHandler() 는 호출되지 않는다. 같은 access.denied.events
+    //  카운터를 chain=api-method 태그로 남겨, 어느 경로로 걸렸는지 구분해서 집계한다. )
     @ExceptionHandler(AccessDeniedException.class)
     protected ResponseEntity<ErrorObject> handleException(AccessDeniedException e, HttpServletRequest request) {
         ErrorObject errorObject = new ErrorObject();
@@ -89,6 +97,7 @@ public class DefaultExceptionAdvice {
         //[AUDIT] 접근 거부(403)는 권한 상승 시도의 신호일 수 있어 반드시 기록한다
         log.warn("[AUDIT] 접근 거부(403) - {} {} from {} : {}",
                 request.getMethod(), request.getRequestURI(), clientIp(request), e.getMessage());
+        meterRegistry.counter("access.denied.events", "chain", "api-method").increment();
 
         return new ResponseEntity<>(errorObject, HttpStatus.FORBIDDEN);
     }
