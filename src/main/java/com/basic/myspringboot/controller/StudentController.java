@@ -51,6 +51,16 @@ public class StudentController {
         return ResponseEntity.ok(students);
     }
 
+    // 로그인한 사용자 본인이 등록한 학생 정보를 조회한다( 없으면 404 ).
+    // 프런트엔드가 로그인 직후 "학생 등록" 링크를 계속 보여줄지 판단할 때 쓴다.
+    // "/{id}" 보다 먼저 선언해 둔다( Spring 이 리터럴을 변수보다 먼저 매칭하지만,
+    // 이 파일만 보고도 순서가 뜻하는 바가 분명하도록 ).
+    @GetMapping("/me")
+    public ResponseEntity<StudentDTO.Response> getMyStudent(@CurrentUser UserInfo currentUser) {
+        StudentDTO.Response student = studentService.getMyStudent(currentUser);
+        return ResponseEntity.ok(student);
+    }
+
     // 단건 조회는 본인 정보만 허용한다 ( Service 에서 소유권 검사, 타인 조회 시 403 )
     @GetMapping("/{id}")
     public ResponseEntity<StudentDTO.Response> getStudentById(@PathVariable Long id,

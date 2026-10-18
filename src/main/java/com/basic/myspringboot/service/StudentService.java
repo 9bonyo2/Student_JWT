@@ -66,6 +66,17 @@ public class StudentService {
         return StudentDTO.Response.fromEntity(student);
     }
 
+    // 로그인한 사용자 본인이 등록한 학생이 있는지 조회한다( 없으면 404 ).
+    // 소유권 검사가 필요 없다 — 조회 조건 자체가 "내가 등록한 학생" 이다.
+    public StudentDTO.Response getMyStudent(UserInfo currentUser) {
+        List<Student> myStudents = studentRepository.findByUserInfo(currentUser);
+        if (myStudents.isEmpty()) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
+                    "Student", "user", currentUser.getEmail());
+        }
+        return StudentDTO.Response.fromEntity(myStudents.get(0));
+    }
+
     // 페이징 처리된 특정 학과의 학생 조회
     public Page<StudentDTO.Response> getStudentsByDepartmentId(Long departmentId, Pageable pageable) {
         // Validate department exists

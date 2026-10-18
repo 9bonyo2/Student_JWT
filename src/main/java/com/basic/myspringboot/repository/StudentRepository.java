@@ -1,6 +1,7 @@
 package com.basic.myspringboot.repository;
 
 import com.basic.myspringboot.entity.Student;
+import com.basic.myspringboot.security.models.UserInfo;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -64,6 +65,19 @@ public interface StudentRepository extends JpaRepository<Student, Long> {
             + "LEFT JOIN FETCH s.department "
             + "WHERE s.studentNumber = :studentNumber")
     Optional<Student> findByStudentNumber(@Param("studentNumber") String studentNumber);
+
+    //로그인한 사용자가 등록해 둔 학생이 있는지( "내 정보" ) 확인할 때 쓴다.
+    //
+    //Optional 이 아니라 List 로 받는 까닭 : 서버가 "한 사용자 = 학생 한 명" 을
+    //강제하지 않아서( 등록 API 가 중복 등록을 막지 않는다 ), 두 번째 등록이
+    //들어오면 Optional 반환 메서드는 "결과가 유일하지 않다" 는 예외를 던진다.
+    //가장 먼저 등록한 것 하나만 쓰면 되므로 서비스에서 List 의 첫 번째 값을 꺼낸다.
+    @Query("SELECT s FROM Student s "
+            + "LEFT JOIN FETCH s.studentDetail "
+            + "LEFT JOIN FETCH s.department "
+            + "WHERE s.userInfo = :userInfo "
+            + "ORDER BY s.id ASC")
+    List<Student> findByUserInfo(@Param("userInfo") UserInfo userInfo);
 
     //--------------------------------------------------------------------
     // 학과별 조회
