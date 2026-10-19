@@ -80,7 +80,7 @@ public class DefaultExceptionAdvice {
         //[AUDIT] 인증 실패는 감사 대상 : 어떤 요청이 실패했는지 맥락을 함께 남긴다
         log.warn("[AUDIT] 인증 실패(401) - {} {} from {} : {}",
                 request.getMethod(), request.getRequestURI(), clientIp(request), e.getMessage());
-
+        meterRegistry.counter("auth.events", "result", "failure").increment();
         return new ResponseEntity<>(errorObject, HttpStatus.UNAUTHORIZED);
     }
 
