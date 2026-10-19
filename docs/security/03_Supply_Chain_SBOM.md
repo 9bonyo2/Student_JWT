@@ -78,7 +78,7 @@ lombok                : 1.18.38
 log4j-core            : 2.24.3   ← 주목!
 ```
 
-> **교육 포인트**: 내가 `pom.xml`에 직접 쓴 것보다 훨씬 많은(104개) 구성요소가 실제로 실행된다. "내가 모르는 코드"가 이렇게 많이 들어온다는 것을 눈으로 확인한다.
+> **포인트**: 내가 `pom.xml`에 직접 쓴 것보다 훨씬 많은(104개) 구성요소가 실제로 실행된다. "내가 모르는 코드"가 이렇게 많이 들어온다는 것을 눈으로 확인한다.
 
 ---
 
@@ -109,17 +109,19 @@ org.apache.logging.log4j log4j-slf4j2-impl 2.24.3
 SBOM(내 부품)을 CVE DB와 대조해 실제 취약점을 찾는다.
 
 ```bash
-./mvnw org.owasp:dependency-check-maven:check
+./mvnw org.owasp:dependency-check-maven:check -Dnvd.api.key=발급받은키
 # → target/dependency-check-report.html (브라우저로 열어 확인)
 ```
 
->  **첫 실행 주의**: NVD 취약점 데이터베이스(수백 MB)를 내려받아 **시간이 오래 걸린다**(10~20분+). 수업에서는 미리 받아두거나, 시간이 부족하면 개념 설명으로 대체한다.
+> **NVD API 키 필수**: 2024년부터 NVD가 API 키 없는 호출을 차단한다. 키가 없으면 `Invalid API Key, length of 0 too short...` 오류로 바로 실패한다. https://nvd.nist.gov/developers/request-an-api-key 에서 이메일로 무료 발급(즉시~최대 몇 시간) 받아 `-Dnvd.api.key=...`로 전달하거나 `~/.m2/settings.xml`에 등록한다.
+>
+>  **첫 실행 주의**: 키가 있어도 NVD 취약점 데이터베이스(수백 MB)를 내려받아 **시간이 오래 걸린다**(10~20분+). 
 
 GitHub 저장소를 쓴다면 **Dependabot**을 켜는 것이 가장 간편하다(설정에서 활성화 → 취약 의존성 자동 감지·업데이트 PR).
 
 ---
 
-## 6. 수업 진행 요약
+## 6. 진행 요약
 
 1. **개념** — 공급망 / CVE / SBOM / 취약점 스캔 (1절)
 2. **실습 ①** — `makeAggregateBom` 으로 SBOM 생성 (2절)

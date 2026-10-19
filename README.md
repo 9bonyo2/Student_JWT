@@ -25,7 +25,7 @@
 - **브랜치/문서**: `feature/csrf-demo` · `05_CSRF.md/.docx` (`csrf_attack.html` 포함)
 
 #### 3. SQL Injection — `/api/vuln/**` — OWASP #5(인젝션) 
-- **근거**: 교육용 취약 엔드포인트에서 문자열 결합 쿼리(JdbcTemplate) 및 JPA 네이티브 쿼리 사용 → UNION 인젝션으로 타 테이블 정보 탈취 가능.
+- **근거**: 취약 엔드포인트에서 문자열 결합 쿼리(JdbcTemplate) 및 JPA 네이티브 쿼리 사용 → UNION 인젝션으로 타 테이블 정보 탈취 가능.
 - **조치**: 파라미터 바인딩(PreparedStatement / `:param`) 안전 버전과 대비 시연.
 - **브랜치/문서**: `feature/sqli-demo` · `01_SQL_Injection.md/.docx`
 
@@ -86,7 +86,7 @@
 
 - **`/api/users` 경로 중복** — `UserRestController`·`UserServiceController` 모두 `/api/users` → 혼란·유지보수 위험, 정리 권장.
 - **CORS** — `allowCredentials=true` + `allowedHeaders="*"` → 운영 시 범위 축소 권장 (origin은 명시되어 양호).
-- **`/api/vuln/**` permitAll** — SQLi 교육용(의도됨), 운영 배포 금지.
+- **`/api/vuln/**` permitAll** — SQLi 데모용(의도됨), 운영 배포 금지.
 
 ---
 
