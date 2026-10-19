@@ -25,7 +25,14 @@
         <ul>
             <li><a th:href="@{/actuator/metrics/access.denied.events}" target="_blank">/actuator/metrics/access.denied.events</a> (전체 합계)</li>
             <li><a th:href="@{/actuator/metrics/access.denied.events(tag='chain:browser')}" target="_blank">/actuator/metrics/access.denied.events?tag=chain:browser</a> (브라우저 체인 403만)</li>
+            <li><a th:href="@{/actuator/metrics/access.denied.events(tag='chain:api')}" target="_blank">/actuator/metrics/access.denied.events?tag=chain:api</a> (API 체인 403만 — auditedAccessDeniedHandler 경로)</li>
             <li><a th:href="@{/actuator/metrics/access.denied.events(tag='chain:api-method')}" target="_blank">/actuator/metrics/access.denied.events?tag=chain:api-method</a> (@PreAuthorize 메서드 보안 403만 — DefaultExceptionAdvice 경로)</li>
+        </ul>
+        <h5 class="mt-4">미인증 접근(401) 집계 (unauthenticated.access.events)</h5>
+        <ul>
+            <li><a th:href="@{/actuator/metrics/unauthenticated.access.events}" target="_blank">/actuator/metrics/unauthenticated.access.events</a> (전체 합계)</li>
+            <li><a th:href="@{/actuator/metrics/unauthenticated.access.events(tag='chain:api')}" target="_blank">/actuator/metrics/unauthenticated.access.events?tag=chain:api</a> (API 체인 401만 — authenticationEntryPoint 경로, 토큰 없음/만료)</li>
+            <li><a th:href="@{/actuator/metrics/unauthenticated.access.events(tag='chain:browser')}" target="_blank">/actuator/metrics/unauthenticated.access.events?tag=chain:browser</a> (브라우저 체인 — 로그인 페이지 리다이렉트, auditedLoginEntryPoint 경로)</li>
         </ul>
     </div>
 </th:block>

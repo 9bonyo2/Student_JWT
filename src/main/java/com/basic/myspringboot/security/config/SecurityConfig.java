@@ -159,12 +159,18 @@ public class SecurityConfig {
      * 토큰이 없거나 잘못된 경우 : 401
      * ( 이 처리는 DispatcherServlet 이전의 Security 필터 체인에서 끝나므로
      *   @RestControllerAdvice 의 AuthenticationException 핸들러는 호출되지 않는다.
-     *   그래서 [AUDIT] 로그를 이 자리에서 직접 남긴다. )
+     *   그래서 [AUDIT] 로그를 이 자리에서 직접 남긴다.
+     *   auth.events 의 result=failure 와는 다르다 — 그것은 자격증명을 제출해
+     *   AuthenticationManager.authenticate() 가 호출된 뒤 실패한 경우만 집계하므로,
+     *   로그인 시도 자체가 없는 이 경로( 토큰 없음·만료 )에는 반응하지 않는다.
+     *   그래서 별도 이름( unauthenticated.access.events, chain=api )으로 집계해
+     *   access.denied.events(403) 와 짝을 맞춘다. )
      */
     private AuthenticationEntryPoint authenticationEntryPoint() {
         return (request, response, authException) -> {
             log.warn("[AUDIT] 인증 실패(401) - {} {} from {} : {}",
                     request.getMethod(), request.getRequestURI(), clientIp(request), authException.getMessage());
+            meterRegistry.counter("unauthenticated.access.events", "chain", "api").increment();
             writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "인증이 필요합니다 ( 유효한 토큰이 없습니다 )");
         };
     }
@@ -174,13 +180,15 @@ public class SecurityConfig {
      * ( 세션 기반이라 실제 응답은 401 이 아니라 /login 으로의 리다이렉트이지만,
      *   원인은 401 과 동일하게 "인증이 안 된 상태로 접근"이므로 같은 [AUDIT] 태그로 남긴다.
      *   응답 자체는 기존 LoginUrlAuthenticationEntryPoint 에 위임해 로그인 페이지로
-     *   리다이렉트하는 동작을 그대로 유지한다. )
+     *   리다이렉트하는 동작을 그대로 유지한다.
+     *   unauthenticated.access.events 카운터(chain=browser)로도 집계한다. )
      */
     private AuthenticationEntryPoint auditedLoginEntryPoint() {
         AuthenticationEntryPoint redirectToLogin = new LoginUrlAuthenticationEntryPoint("/login");
         return (request, response, authException) -> {
             log.warn("[AUDIT] 인증 실패(401) - {} {} from {} : {}",
                     request.getMethod(), request.getRequestURI(), clientIp(request), authException.getMessage());
+            meterRegistry.counter("unauthenticated.access.events", "chain", "browser").increment();
             redirectToLogin.commence(request, response, authException);
         };
     }
