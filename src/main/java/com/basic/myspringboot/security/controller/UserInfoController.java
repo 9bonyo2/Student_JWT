@@ -79,6 +79,7 @@ public class UserInfoController {
 
         //인증에 성공하면 principal 에 UserInfoUserDetails 가 들어 있다
         UserInfoUserDetails userDetails = (UserInfoUserDetails) authentication.getPrincipal();
+<<<<<<< HEAD
         //[JWT 하드닝] 토큰 subject 로 email(PII) 대신 불투명 식별자(uuid)를 넣는다
         String accessToken = jwtService.generateToken(userDetails.getUuid());
         //[2단계] 로그인 시 refresh 토큰도 발급(서버 저장) → 짧은 access 만료 후 재발급에 사용
@@ -110,6 +111,11 @@ public class UserInfoController {
     public ResponseEntity<Void> logout(@Valid @RequestBody RefreshRequest request) {
         refreshTokenService.revoke(request.getRefreshToken());
         return ResponseEntity.noContent().build();
+=======
+        String token = jwtService.generateToken(userDetails.getUsername());
+        return ResponseEntity.ok(AuthResponse.of(token, jwtService.getAccessExpireSeconds(),
+                UserInfoResponse.from(userDetails)));
+>>>>>>> origin/feature/jwt-security-demo
     }
 
     /**
